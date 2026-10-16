@@ -17,6 +17,7 @@ dev:
 
 test:
 	cd $(BACKEND) && .venv/bin/pytest -q
+	cd frontend && npx tsc --noEmit && npm run lint && npx playwright test
 
 experiments:
 	@echo "Added in Task 15"; exit 1

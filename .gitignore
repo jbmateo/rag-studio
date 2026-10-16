@@ -13,3 +13,4 @@ backend/storage/
 frontend/test-results/
 frontend/playwright-report/
 *.egg-info/
+backend/.e2e/
