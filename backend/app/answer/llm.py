@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Protocol
 
 import anthropic
+from anthropic import transform_schema
 from pydantic import ValidationError
 
 from app.answer.schema import AnswerDraft, DraftSentence, Passage
@@ -17,12 +18,16 @@ SYSTEM_PROMPT = """You answer questions using only the numbered passages provide
 - If they do not answer it, use status "insufficient_evidence", return no sentences, and describe what is missing in "missing"."""
 
 
+ANSWER_SCHEMA = transform_schema(AnswerDraft)
+
+
 @dataclass
 class LLMOutcome:
     draft: AnswerDraft | None
     stop_reason: str
     input_tokens: int
     output_tokens: int
+    cached: bool = False
 
 
 class LLM(Protocol):
@@ -40,19 +45,19 @@ class ClaudeLLM:
 
     def draft(self, question: str, passages: list[Passage], model: str) -> LLMOutcome:
         # anthropic.APIError (status, connection, timeout) propagates to the caller.
-        resp = self.client.messages.parse(
+        resp = self.client.messages.create(
             model=model,
             max_tokens=4000,
             system=SYSTEM_PROMPT,
             messages=[{"role": "user", "content": build_user_message(question, passages)}],
-            output_config={"effort": "medium"},
-            output_format=AnswerDraft,
+            output_config={"effort": "medium", "format": {"type": "json_schema", "schema": ANSWER_SCHEMA}},
         )
         stop = resp.stop_reason or ""
         draft = None
         if stop not in ("refusal", "max_tokens"):
+            text = next((b.text for b in resp.content if getattr(b, "type", None) == "text"), "")
             try:
-                draft = resp.parsed_output
+                draft = AnswerDraft.model_validate_json(text)
             except (ValidationError, ValueError):
                 draft = None
         return LLMOutcome(draft, stop, resp.usage.input_tokens, resp.usage.output_tokens)
@@ -81,12 +86,14 @@ class CachedLLM:
                     stop_reason=d["stop_reason"],
                     input_tokens=d["input_tokens"],
                     output_tokens=d["output_tokens"],
+                    cached=True,
                 )
             except (OSError, ValueError, KeyError, ValidationError):
                 pass  # corrupt entry: fall through and regenerate
         out = self.inner.draft(question, passages, model)
         if out.draft is not None:
             payload = asdict(out)
+            payload.pop("cached")
             payload["draft"] = out.draft.model_dump()
             path.write_text(json.dumps(payload))
         return out

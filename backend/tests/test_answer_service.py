@@ -4,7 +4,7 @@ import anthropic
 import httpx
 import pytest
 
-from app.answer.llm import CachedLLM, ClaudeLLM, FakeLLM, make_llm
+from app.answer.llm import ANSWER_SCHEMA, CachedLLM, ClaudeLLM, FakeLLM, make_llm
 from app.answer.schema import AnswerDraft, DraftSentence, Passage
 from app.answer.service import (
     LLMUnavailableError, NoDocumentsError, answer_question, answer_question_detailed,
@@ -108,44 +108,87 @@ def test_make_llm(settings):
 class FakeClient:
     def __init__(self, resp):
         self.calls = []
-        self.messages = SimpleNamespace(parse=self._parse)
+        self.messages = SimpleNamespace(create=self._create)
         self._resp = resp
 
-    def _parse(self, **kw):
+    def _create(self, **kw):
         self.calls.append(kw)
         return self._resp
 
 
-def _resp(parsed, stop):
-    return SimpleNamespace(parsed_output=parsed, stop_reason=stop, usage=SimpleNamespace(input_tokens=7, output_tokens=3))
+def _resp(text, stop):
+    blocks = [SimpleNamespace(type="text", text=text)] if text is not None else []
+    return SimpleNamespace(content=blocks, stop_reason=stop, usage=SimpleNamespace(input_tokens=7, output_tokens=3))
 
 
 P = [Passage(label="c1", document_name="a.md", location="p. 1", text="Hello.")]
+VALID = d(("A.", ["c1"])).model_dump_json()
 
 
 def test_claude_llm_success():
-    client = FakeClient(_resp(d(("A.", ["c1"])), "end_turn"))
+    client = FakeClient(_resp(VALID, "end_turn"))
     out = ClaudeLLM("k", client=client).draft("q?", P, "claude-sonnet-5-5")
     assert out.draft.sentences[0].text == "A." and (out.input_tokens, out.output_tokens) == (7, 3)
     kw = client.calls[0]
     assert kw["model"] == "claude-sonnet-5-5" and kw["max_tokens"] == 4000
-    assert kw["output_config"] == {"effort": "medium"} and kw["output_format"] is AnswerDraft
-    assert "temperature" not in kw and "tool_choice" not in kw and "thinking" not in kw
+    assert kw["output_config"]["effort"] == "medium"
+    assert kw["output_config"]["format"] == {"type": "json_schema", "schema": ANSWER_SCHEMA}
+    assert not {"temperature", "tool_choice", "thinking"} & kw.keys()
     assert kw["messages"][0]["content"] == "[c1] (a.md — p. 1)\nHello.\n\nQuestion: q?"
 
 
-@pytest.mark.parametrize("stop", ["refusal", "max_tokens"])
-def test_claude_llm_refusal_and_max_tokens(stop):
-    out = ClaudeLLM("k", client=FakeClient(_resp(d(("A.", ["c1"])), stop))).draft("q", P, "m")
-    assert out.draft is None and out.stop_reason == stop
+def test_answer_schema_is_strict_and_matches_model():
+    assert ANSWER_SCHEMA["additionalProperties"] is False
+    assert set(ANSWER_SCHEMA["required"]) == set(AnswerDraft.model_fields)
+    sent = ANSWER_SCHEMA["$defs"]["DraftSentence"]
+    assert sent["additionalProperties"] is False and set(sent["required"]) == {"text", "citations"}
 
 
-def test_claude_llm_parse_error_gives_none():
-    class Bad(SimpleNamespace):
-        @property
-        def parsed_output(self):
-            AnswerDraft.model_validate({"status": "nope"})
+def test_claude_llm_truncated_json_max_tokens():
+    out = ClaudeLLM("k", client=FakeClient(_resp(VALID[:20], "max_tokens"))).draft("q", P, "m")
+    assert out.draft is None and out.stop_reason == "max_tokens"
 
-    resp = Bad(stop_reason="end_turn", usage=SimpleNamespace(input_tokens=1, output_tokens=1))
-    out = ClaudeLLM("k", client=FakeClient(resp)).draft("q", P, "m")
+
+def test_claude_llm_refusal_empty_text():
+    out = ClaudeLLM("k", client=FakeClient(_resp(None, "refusal"))).draft("q", P, "m")
+    assert out.draft is None and out.stop_reason == "refusal"
+
+
+def test_claude_llm_schema_invalid_json_gives_none():
+    out = ClaudeLLM("k", client=FakeClient(_resp('{"status": "nope"}', "end_turn"))).draft("q", P, "m")
     assert out.draft is None and out.stop_reason == "end_turn"
+    out = ClaudeLLM("k", client=FakeClient(_resp("not json", "end_turn"))).draft("q", P, "m")
+    assert out.draft is None
+
+
+def test_retry_that_succeeds(seeded):
+    conn, user = seeded
+
+    class Flaky:
+        calls = 0
+
+        def draft(self, q, passages, model):
+            from app.answer.llm import LLMOutcome
+            self.calls += 1
+            if self.calls == 1:
+                return LLMOutcome(None, "max_tokens", 5, 5)
+            return LLMOutcome(d(("A.", ["c1"])), "end_turn", 5, 5)
+
+    llm = Flaky()
+    r, t = answer_question_detailed(conn, HashEmbedder(), llm, PipelineConfig(), user, "refund days", None)
+    assert llm.calls == 2 and r.status == "answered" and t.input_tokens == 10
+
+
+def test_duplicate_labels_deduped(seeded):
+    conn, user = seeded
+    for verify in (True, False):
+        r = answer_question(conn, HashEmbedder(), ScriptedLLM(d(("A.", ["c1", "c1"]))),
+                            PipelineConfig(verify_citations=verify), user, "refund days", None)
+        assert r.sentences[0].citations == [1] and r.dropped_citations == 0
+
+
+def test_cached_flag(tmp_path):
+    c = CachedLLM(SpyLLM(), tmp_path)
+    p = [Passage(label="c1", document_name="a", location="p. 1", text="t")]
+    a = c.draft("q", p, "m"); b = c.draft("q", p, "m")
+    assert a.cached is False and b.cached is True and b.input_tokens == a.input_tokens

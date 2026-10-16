@@ -93,7 +93,10 @@ def answer_question_detailed(
         if cfg.verify_citations:
             final, dropped = verify_draft(draft, set(labels))
         else:
-            final = draft
+            final = AnswerDraft(
+                status=draft.status, missing=draft.missing,
+                sentences=[DraftSentence(text=x.text, citations=list(dict.fromkeys(x.citations))) for x in draft.sentences],
+            )
 
     by_label = {lb: rc.chunk for lb, rc in zip(labels, result.chunks)}
     numbers: dict[str, int] = {}

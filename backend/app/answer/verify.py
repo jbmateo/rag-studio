@@ -9,8 +9,8 @@ def verify_draft(draft: AnswerDraft, valid_labels: set[str]) -> tuple[AnswerDraf
     kept: list[DraftSentence] = []
     sentence_removed = False
     for s in draft.sentences:
-        good = [c for c in s.citations if c in valid_labels]
-        dropped += len(s.citations) - len(good)
+        good = [c for c in dict.fromkeys(s.citations) if c in valid_labels]
+        dropped += len(set(s.citations)) - len(good)
         if good:
             kept.append(DraftSentence(text=s.text, citations=good))
         else:
@@ -21,6 +21,8 @@ def verify_draft(draft: AnswerDraft, valid_labels: set[str]) -> tuple[AnswerDraf
         status = "insufficient_evidence"
     elif sentence_removed and status == "answered":
         status = "partial"
+    if status == "insufficient_evidence":
+        kept = []
     if status != draft.status and not missing:
         missing = UNSUPPORTED
     return AnswerDraft(status=status, sentences=kept, missing=missing), dropped

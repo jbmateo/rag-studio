@@ -24,3 +24,8 @@ def test_all_dropped_becomes_insufficient():
 def test_answered_with_dropped_sentence_becomes_partial():
     out, _ = verify_draft(d(("A.", ["c1"]), ("B.", ["c7"])), {"c1"})
     assert out.status == "partial"
+
+
+def test_insufficient_status_clears_sentences():
+    out, _ = verify_draft(d(("A.", ["c1"]), status="insufficient_evidence"), {"c1"})
+    assert out.status == "insufficient_evidence" and out.sentences == []
