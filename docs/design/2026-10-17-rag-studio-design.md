@@ -58,7 +58,7 @@ The frontend reaches the backend only over HTTP. Next.js rewrites `/api/*` to Fa
 | API | FastAPI + Uvicorn |
 | DB | SQLite (single file), FTS5 for BM25 |
 | Embeddings | fastembed `BAAI/bge-small-en-v1.5` (384-dim, local, no API key), stored as float32 blobs; brute-force cosine via numpy |
-| LLM | Anthropic Claude `claude-sonnet-5-5` via tool use |
+| LLM | Anthropic Claude `claude-opus-5-5` (configurable), structured outputs via `client.messages.parse` + Pydantic schema, effort `medium` set explicitly |
 | Parsing | pypdf (PDF), python-docx (DOCX), trafilatura (HTML), httpx (URL fetch) |
 | Auth | bcrypt password hashes, server-side sessions, httpOnly cookie |
 | Tests | pytest (+ FastAPI TestClient), Playwright smoke test |
@@ -114,7 +114,7 @@ Another user's `doc_id` returns 404.
 1. **Scope:** the caller's `ready` documents, optionally restricted to `doc_ids`. If none: `400 "Upload a document first"`.
 2. **Hybrid retrieval** (default `retrieval_mode=hybrid`): top 20 by cosine similarity + top 20 by FTS5 BM25 → reciprocal rank fusion (k=60) → top 8. In `vector` or `bm25` mode only that ranking is used, and Gate 1 applies only its own half of the condition.
 3. **Gate 1 — relevance:** if max cosine similarity < `MIN_SIMILARITY` (config, start 0.35) **and** no chunk contains at least half of the question's non-stopword terms (a "strong BM25 hit" — this keeps exact-term queries like codes or names from being refused), return `status: "not_found"` with the closest chunks for transparency. No LLM call.
-4. **Generation:** chunks are labelled `c1…c8` with document name + location. System prompt: answer only from the passages; every sentence must cite; if the passages don't answer, say so. Claude must call tool `submit_answer`:
+4. **Generation:** chunks are labelled `c1…c8` with document name + location. System prompt: answer only from the passages; every sentence must cite; if the passages don't answer, say so. The response is constrained with structured outputs (`messages.parse`, Pydantic `AnswerDraft` schema) — forced `tool_choice` and `temperature` are rejected by current models:
    ```json
    {
      "status": "answered | partial | insufficient_evidence",
@@ -136,7 +136,7 @@ Another user's `doc_id` returns 404.
    }
    ```
    Citation numbers are assigned in first-appearance order.
-7. **Errors:** Claude API error/timeout (30 s) → `502` with retryable message, never a fabricated answer. Malformed tool output → one retry, then `insufficient_evidence`.
+7. **Errors:** Claude API error/timeout (30 s) → `502` with retryable message, never a fabricated answer. Unparseable output or `stop_reason` of `max_tokens` → one retry, then `insufficient_evidence`. `stop_reason == "refusal"` (safety classifier) → `insufficient_evidence` with `missing` explaining the model declined.
 
 ## 9. Frontend
 
@@ -174,7 +174,7 @@ Layout (desktop): search bar full width; below, a left column with Sources, a ce
 - `corpus/` — 5–8 public-domain or self-written documents covering all supported formats (PDF, DOCX, MD, TXT, HTML), mixing prose with exact-term content (IDs, numbers, names).
 - `questions.jsonl` — ~60 hand-labelled questions: ~40 answerable (each with expected document + location, tagged `natural` or `exact_term`) and ~20 unanswerable but plausible (topic-adjacent, not merely off-topic). Labelling guidelines are written in `FINDINGS.md`.
 
-**Runner** (`run_experiment.py experiments/rq1.yaml`): ingests the corpus into an isolated temp DB per chunk configuration, runs every question for every config variant, writes raw per-question records (retrieved IDs, ranks, scores, status, sentences, citations, timings, cost) to `results/<rq>/<timestamp>.jsonl`, and prints a summary table. Temperature 0; Claude responses cached by (config, question) hash so re-runs are cheap and reproducible. Retrieval-only metrics (RQ1, RQ4 hit@8) need no LLM calls.
+**Runner** (`run_experiment.py experiments/rq1.yaml`): ingests the corpus into an isolated temp DB per chunk configuration, runs every question for every config variant, writes raw per-question records (retrieved IDs, ranks, scores, status, sentences, citations, timings, cost) to `results/<rq>/<timestamp>.jsonl`, and prints a summary table. Current models do not accept `temperature`, so reproducibility comes from caching: Claude responses are cached on disk keyed by a hash of the exact request (model, system prompt, passages, question), so re-runs replay identical outputs and sweeps that do not change the LLM input (e.g. RQ2 thresholds) cost nothing extra. Run-to-run variance is measured once by re-running RQ3 uncached 3× and reported. Retrieval-only metrics (RQ1, RQ4 hit@8) need no LLM calls.
 
 **Metrics:**
 - hit@8 / MRR — expected location appears in retrieved top 8 / reciprocal rank of first match.
@@ -187,7 +187,7 @@ Layout (desktop): search bar full width; below, a left column with Sources, a ce
 
 ## 12. Configuration
 
-`backend/.env`: `ANTHROPIC_API_KEY`, `CLAUDE_MODEL` (default `claude-sonnet-5-5`), `RETRIEVAL_MODE` (default `hybrid`), `MIN_SIMILARITY`, `VERIFY_CITATIONS` (default on), `CHUNK_CHARS`, `DATABASE_PATH`, `STORAGE_DIR`, `COOKIE_SECURE`. `.env.example` committed; `.env` gitignored. Defaults are updated to whatever the experiments support.
+`backend/.env`: `ANTHROPIC_API_KEY`, `CLAUDE_MODEL` (default `claude-opus-5-5`), `RETRIEVAL_MODE` (default `hybrid`), `MIN_SIMILARITY`, `VERIFY_CITATIONS` (default on), `CHUNK_CHARS`, `DATABASE_PATH`, `STORAGE_DIR`, `COOKIE_SECURE`. `.env.example` committed; `.env` gitignored. Defaults are updated to whatever the experiments support.
 
 ## 13. Out of scope (v1)
 
