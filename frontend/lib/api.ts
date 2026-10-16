@@ -1,4 +1,5 @@
-import type { User } from "./types";
+import { useCallback, useEffect, useRef, useState } from "react";
+import type { Document, User } from "./types";
 
 export class ApiError extends Error {
   status: number;
@@ -14,7 +15,7 @@ export class ApiError extends Error {
 export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   const res = await fetch(path, { credentials: "same-origin", ...init });
   // Bad credentials on the auth pages are a normal error, not an expired session.
-  const onAuthPage = typeof window !== "undefined" && /^\/(login|signup)/.test(window.location.pathname);
+  const onAuthPage = typeof window !== "undefined" && /^\/(login|signup)(\/|$)/.test(window.location.pathname);
   if (res.status === 401 && typeof window !== "undefined" && !onAuthPage) {
     window.location.href = "/login";
   }
@@ -53,4 +54,57 @@ export function authErrorMessage(e: unknown): string {
     if (typeof e.detail === "string" && e.detail) return e.detail;
   }
   return "Something went wrong. Please try again.";
+}
+
+export const listDocuments = () => api<Document[]>("/api/documents");
+export const deleteDocument = (id: string) => api<void>(`/api/documents/${id}`, { method: "DELETE" });
+export const uploadFiles = (files: File[]) => {
+  const body = new FormData();
+  for (const f of files) body.append("files", f);
+  return api<Document[]>("/api/documents", { method: "POST", body });
+};
+export const importUrl = (url: string) => api<Document[]>("/api/documents", json({ url }));
+
+/** Friendly message for document errors (400 detail, 413 too large). */
+export function documentErrorMessage(e: unknown): string {
+  if (e instanceof ApiError) {
+    if (e.status === 413) return "Upload is too large (100 MB maximum).";
+    if (typeof e.detail === "string" && e.detail) return e.detail;
+  }
+  return "Something went wrong. Please try again.";
+}
+
+/** The user's documents; polls every 2 s only while any is still processing. */
+export function useDocuments() {
+  const [documents, setDocuments] = useState<Document[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const alive = useRef(true);
+
+  const refresh = useCallback(async () => {
+    try {
+      const docs = await listDocuments();
+      if (!alive.current) return;
+      setDocuments(docs);
+      setError(null);
+    } catch (e) {
+      if (alive.current) setError(documentErrorMessage(e));
+    }
+  }, []);
+
+  useEffect(() => {
+    alive.current = true;
+    refresh();
+    return () => {
+      alive.current = false;
+    };
+  }, [refresh]);
+
+  const processing = documents.some((d) => d.status === "processing");
+  useEffect(() => {
+    if (!processing) return;
+    const id = setInterval(refresh, 2000);
+    return () => clearInterval(id);
+  }, [processing, refresh]);
+
+  return { documents, refresh, error };
 }

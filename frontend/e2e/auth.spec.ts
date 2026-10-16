@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { signUpFresh } from "./helpers";
 
 test("signup, persists across reload, logout, bad login", async ({ page }) => {
   const email = `u${Date.now()}@x.io`;
@@ -20,10 +21,6 @@ test("signup, persists across reload, logout, bad login", async ({ page }) => {
 });
 
 test("helper signs up a fresh user and next redirect works", async ({ page }) => {
-  await page.goto("/signup");
-  await expect(page.getByRole("button", { name: "Sign up" })).toBeVisible();
-  const { signUpFresh } = await import("./helpers");
-  await page.context().clearCookies();
   const email = await signUpFresh(page);
   await page.getByRole("button", { name: "Log out" }).click();
   await expect(page).toHaveURL(/\/login/);
