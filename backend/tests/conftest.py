@@ -41,3 +41,24 @@ def make_user_doc(conn):
         return user_id, doc_id
 
     return _make
+
+
+@pytest.fixture
+def client(settings):
+    from fastapi.testclient import TestClient
+
+    from app.main import create_app
+
+    # Embedder/LLM fakes arrive in later tasks; pass None until then.
+    with TestClient(create_app(settings, None, None)) as c:
+        yield c
+
+
+@pytest.fixture
+def signup(client):
+    def _signup(email, password="password1"):
+        r = client.post("/api/auth/signup", json={"email": email, "password": password})
+        assert r.status_code == 201, r.text
+        return r
+
+    return _signup
