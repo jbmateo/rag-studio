@@ -58,7 +58,7 @@ The frontend reaches the backend only over HTTP. Next.js rewrites `/api/*` to Fa
 | API | FastAPI + Uvicorn |
 | DB | SQLite (single file), FTS5 for BM25 |
 | Embeddings | fastembed `BAAI/bge-small-en-v1.5` (384-dim, local, no API key), stored as float32 blobs; brute-force cosine via numpy |
-| LLM | Anthropic Claude `claude-opus-5-5` (configurable), structured outputs via `client.messages.parse` + Pydantic schema, effort `medium` set explicitly |
+| LLM | Anthropic Claude `claude-sonnet-5-5` (configurable), structured outputs via `client.messages.parse` + Pydantic schema, effort `medium` set explicitly |
 | Parsing | pypdf (PDF), python-docx (DOCX), trafilatura (HTML), httpx (URL fetch) |
 | Auth | bcrypt password hashes, server-side sessions, httpOnly cookie |
 | Tests | pytest (+ FastAPI TestClient), Playwright smoke test |
@@ -187,7 +187,7 @@ Layout (desktop): search bar full width; below, a left column with Sources, a ce
 
 ## 12. Configuration
 
-`backend/.env`: `ANTHROPIC_API_KEY`, `CLAUDE_MODEL` (default `claude-opus-5-5`), `RETRIEVAL_MODE` (default `hybrid`), `MIN_SIMILARITY`, `VERIFY_CITATIONS` (default on), `CHUNK_CHARS`, `DATABASE_PATH`, `STORAGE_DIR`, `COOKIE_SECURE`. `.env.example` committed; `.env` gitignored. Defaults are updated to whatever the experiments support.
+`backend/.env`: `ANTHROPIC_API_KEY`, `CLAUDE_MODEL` (default `claude-sonnet-5-5`), `RETRIEVAL_MODE` (default `hybrid`), `MIN_SIMILARITY`, `VERIFY_CITATIONS` (default on), `CHUNK_CHARS`, `DATABASE_PATH`, `STORAGE_DIR`, `COOKIE_SECURE`. `.env.example` committed; `.env` gitignored. Defaults are updated to whatever the experiments support.
 
 ## 13. Out of scope (v1)
 
