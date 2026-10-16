@@ -52,8 +52,9 @@ def client(settings):
 
     from app.embeddings import HashEmbedder
 
-    # The LLM fake arrives in a later task; pass None until then.
-    with TestClient(create_app(settings, HashEmbedder(), None)) as c:
+    from app.answer.llm import FakeLLM
+
+    with TestClient(create_app(settings, HashEmbedder(), FakeLLM())) as c:
         yield c
 
 
@@ -167,3 +168,27 @@ def seeded_two_users(conn, two_users, storage, add_file_doc):
         ("b_refunds.md", "# Refunds\n\nB refunds arrive in 7 days.\n"),
     ])
     return conn, a, b, a_doc_ids
+
+
+class ScriptedLLM:
+    def __init__(self, draft, stop_reason="end_turn"):
+        self._draft, self._stop, self.calls = draft, stop_reason, 0
+
+    def draft(self, question, passages, model):
+        from app.answer.llm import LLMOutcome
+
+        self.calls += 1
+        return LLMOutcome(self._draft, self._stop, 10, 5)
+
+
+class SpyLLM:
+    def __init__(self):
+        self.calls = 0
+
+    def draft(self, question, passages, model):
+        from app.answer.llm import LLMOutcome
+        from app.answer.schema import AnswerDraft, DraftSentence
+
+        self.calls += 1
+        d = AnswerDraft(status="answered", sentences=[DraftSentence(text="Spy.", citations=["c1"])], missing="")
+        return LLMOutcome(d, "end_turn", 1, 1)

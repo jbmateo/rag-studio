@@ -2,6 +2,7 @@ from fastapi import FastAPI
 
 from app.auth.routes import router as auth_router
 from app.documents.routes import router as documents_router
+from app.answer.llm import make_llm
 from app.config import Settings
 from app.db import connect, init_db
 from app.embeddings import make_embedder
@@ -11,7 +12,7 @@ def create_app(settings: Settings, embedder=None, llm=None) -> FastAPI:
     app = FastAPI(title="RAG Studio")
     app.state.settings = settings
     app.state.embedder = embedder if embedder is not None else make_embedder(settings.embedder)
-    app.state.llm = llm
+    app.state.llm = llm if llm is not None else make_llm(settings)
     app.state.login_attempts = {}
 
     settings.database_path.parent.mkdir(parents=True, exist_ok=True)
