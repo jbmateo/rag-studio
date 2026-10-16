@@ -19,5 +19,7 @@ test:
 	cd $(BACKEND) && .venv/bin/pytest -q
 	cd frontend && npx tsc --noEmit && npm run lint && npx playwright test
 
+# Runs all four experiments (rq2-rq4 call the real Claude API: needs ANTHROPIC_API_KEY and costs money), then the plots.
 experiments:
-	@echo "Added in Task 15"; exit 1
+	cd $(BACKEND) && for rq in rq1 rq2 rq3 rq4; do .venv/bin/python research/run_experiment.py research/experiments/$$rq.yaml || exit 1; done
+	cd $(BACKEND) && .venv/bin/python research/plots.py
