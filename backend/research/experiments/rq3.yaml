@@ -1,0 +1,7 @@
+name: rq3
+llm: true
+judge: true
+base: {}
+variants:
+  - {label: verify_on, verify_citations: true}
+  - {label: verify_off, verify_citations: false}

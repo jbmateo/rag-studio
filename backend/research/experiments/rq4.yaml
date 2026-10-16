@@ -1,0 +1,8 @@
+name: rq4
+llm: true
+judge: false
+base: {}
+variants:
+  - {label: chunk_1000, chunk_chars: 1000}
+  - {label: chunk_2000, chunk_chars: 2000}
+  - {label: chunk_4000, chunk_chars: 4000}
