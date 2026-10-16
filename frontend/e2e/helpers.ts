@@ -10,3 +10,10 @@ export async function signUpFresh(page: Page): Promise<string> {
   await expect(page.getByText(email)).toBeVisible();
   return email;
 }
+
+/** Opens the Documents tab, uploads a file and waits until it is Ready. */
+export async function uploadAndWaitReady(page: Page, path: string): Promise<void> {
+  await page.getByRole("tab", { name: "Documents" }).click();
+  await page.getByLabel("Upload files").setInputFiles(path);
+  await expect(page.getByText(/Ready · \d+ chunks?/)).toBeVisible({ timeout: 15000 });
+}

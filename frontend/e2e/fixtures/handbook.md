@@ -2,7 +2,7 @@
 
 ## Returns
 
-Refunds are issued within 14 days of purchase.
+Refunds take 14 days to reach your original payment method.
 Items must be unused and in their original packaging.
 
 ## Support

@@ -5,12 +5,16 @@ import DocumentsTable from "./DocumentsTable";
 import UploadPanel from "./UploadPanel";
 
 export default function DocumentsTab() {
-  const { documents, refresh, error } = useDocuments();
+  const { documents, refresh, error, loading } = useDocuments();
   return (
     <div className="space-y-6">
       <UploadPanel onChanged={refresh} />
       {error && <p role="alert" className="text-sm text-red-600">{error}</p>}
-      <DocumentsTable documents={documents} onChanged={refresh} />
+      {loading ? (
+        <p className="text-sm text-slate-500">Loading…</p>
+      ) : (
+        <DocumentsTable documents={documents} onChanged={refresh} />
+      )}
     </div>
   );
 }

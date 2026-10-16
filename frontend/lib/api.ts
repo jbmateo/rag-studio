@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { Document, User } from "./types";
+import type { AskResponse, ChunkRow, Document, User } from "./types";
 
 export class ApiError extends Error {
   status: number;
@@ -78,6 +78,7 @@ export function documentErrorMessage(e: unknown): string {
 export function useDocuments() {
   const [documents, setDocuments] = useState<Document[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
   const alive = useRef(true);
 
   const refresh = useCallback(async () => {
@@ -88,6 +89,8 @@ export function useDocuments() {
       setError(null);
     } catch (e) {
       if (alive.current) setError(documentErrorMessage(e));
+    } finally {
+      if (alive.current) setLoading(false);
     }
   }, []);
 
@@ -106,5 +109,19 @@ export function useDocuments() {
     return () => clearInterval(id);
   }, [processing, refresh]);
 
-  return { documents, refresh, error };
+  return { documents, refresh, error, loading };
+}
+
+export const askQuestion = (question: string, docIds: string[] | null) =>
+  api<AskResponse>("/api/ask", json({ question, doc_ids: docIds }));
+export const listChunks = (docId: string, offset = 0, limit = 50) =>
+  api<ChunkRow[]>(`/api/documents/${docId}/chunks?offset=${offset}&limit=${limit}`);
+
+/** Friendly message for ask errors; 400 "Upload a document first" is handled by the caller as info. */
+export function askErrorMessage(e: unknown): string {
+  if (e instanceof ApiError) {
+    if (e.status === 422) return "Please enter a question.";
+    if (typeof e.detail === "string" && e.detail) return e.detail;
+  }
+  return "Something went wrong. Please try again.";
 }

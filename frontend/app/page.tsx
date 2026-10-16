@@ -4,6 +4,7 @@ import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Header from "@/components/Header";
 import Tabs from "@/components/Tabs";
+import Dashboard from "@/components/dashboard/Dashboard";
 import DocumentsTab from "@/components/documents/DocumentsTab";
 import { me } from "@/lib/api";
 
@@ -28,11 +29,7 @@ function Workspace() {
             {
               id: "dashboard",
               label: "Dashboard",
-              panel: (
-                <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-12 text-center text-sm text-slate-500">
-                  Dashboard coming soon
-                </div>
-              ),
+              panel: <Dashboard onOpenDocuments={() => router.replace("/?tab=documents")} />,
             },
             { id: "documents", label: "Documents", panel: <DocumentsTab /> },
           ]}
