@@ -7,13 +7,12 @@ from collections import deque
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, field_validator
 
-from app.auth.deps import COOKIE_NAME, User, current_user, get_conn
+from app.auth.deps import COOKIE_NAME, User, current_user, get_conn, set_session_cookie
 from app.auth.passwords import hash_password, verify_password
 from app.auth.sessions import create_session, delete_session
 
 router = APIRouter(prefix="/api/auth")
 
-COOKIE_MAX_AGE = 30 * 24 * 3600
 LOGIN_LIMIT = 5
 LOGIN_WINDOW_S = 60
 BAD_LOGIN = "Invalid email or password"
@@ -42,27 +41,22 @@ class SignupBody(Credentials):
     def _min_length(cls, v: str) -> str:
         if len(v) < 8:
             raise ValueError("password must be at least 8 characters")
+        if len(v.encode()) > 72:  # bcrypt limit
+            raise ValueError("password must be at most 72 bytes")
         return v
-
-
-def _set_cookie(request: Request, response: Response, token: str, remember: bool) -> None:
-    response.set_cookie(
-        COOKIE_NAME,
-        token,
-        max_age=COOKIE_MAX_AGE if remember else None,
-        httponly=True,
-        samesite="lax",
-        secure=request.app.state.settings.cookie_secure,
-    )
 
 
 def _check_rate_limit(request: Request) -> None:
     attempts: dict[str, deque] = request.app.state.login_attempts
     ip = request.client.host if request.client else "unknown"
     now = time.monotonic()
+    for key in list(attempts):
+        old = attempts[key]
+        while old and now - old[0] > LOGIN_WINDOW_S:
+            old.popleft()
+        if not old:
+            del attempts[key]
     q = attempts.setdefault(ip, deque())
-    while q and now - q[0] > LOGIN_WINDOW_S:
-        q.popleft()
     if len(q) >= LOGIN_LIMIT:
         raise HTTPException(status_code=429, detail="Too many login attempts. Try again in a minute.")
     q.append(now)
@@ -79,7 +73,7 @@ def signup(body: SignupBody, request: Request, response: Response, conn: sqlite3
         conn.commit()
     except sqlite3.IntegrityError:
         raise HTTPException(status_code=409, detail="Email already registered")
-    _set_cookie(request, response, create_session(conn, user_id, body.remember), body.remember)
+    set_session_cookie(request, response, create_session(conn, user_id, body.remember), body.remember)
     return User(id=user_id, email=body.email)
 
 
@@ -90,7 +84,7 @@ def login(body: Credentials, request: Request, response: Response, conn: sqlite3
     ok = verify_password(body.password, row["password_hash"] if row else _DUMMY_HASH)
     if row is None or not ok:
         raise HTTPException(status_code=401, detail=BAD_LOGIN)
-    _set_cookie(request, response, create_session(conn, row["id"], body.remember), body.remember)
+    set_session_cookie(request, response, create_session(conn, row["id"], body.remember), body.remember)
     return User(id=row["id"], email=row["email"])
 
 

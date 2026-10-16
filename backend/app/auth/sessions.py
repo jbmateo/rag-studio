@@ -27,6 +27,12 @@ def create_session(conn: sqlite3.Connection, user_id: str, remember: bool) -> st
 
 
 def resolve_session(conn: sqlite3.Connection, token: str) -> str | None:
+    found = resolve_session_ex(conn, token)
+    return found[0] if found else None
+
+
+def resolve_session_ex(conn: sqlite3.Connection, token: str) -> tuple[str, bool] | None:
+    """Like resolve_session, but also reports whether the session is a remember-me one."""
     now = _now()
     conn.execute("delete from sessions where expires_at <= ?", (now.isoformat(),))
     row = conn.execute(
@@ -41,7 +47,7 @@ def resolve_session(conn: sqlite3.Connection, token: str) -> str | None:
             ((now + REMEMBER_TTL).isoformat(), _hash(token)),
         )
     conn.commit()
-    return row["user_id"]
+    return row["user_id"], bool(row["remember"])
 
 
 def delete_session(conn: sqlite3.Connection, token: str) -> None:

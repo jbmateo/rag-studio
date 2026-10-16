@@ -51,3 +51,33 @@ def test_short_password_and_duplicate_email(client, signup):
     assert client.post("/api/auth/signup", json={"email": "b@x.io", "password": "short"}).status_code == 422
     signup("a@x.io")
     assert client.post("/api/auth/signup", json={"email": "a@x.io", "password": "password1"}).status_code == 409
+
+
+def test_me_reissues_persistent_cookie_for_remember_session(client, signup):
+    signup("a@x.io")
+    r = client.get("/api/auth/me")
+    assert "max-age=2592000" in r.headers["set-cookie"].lower()
+
+
+def test_me_does_not_set_max_age_for_non_remember_session(client, signup):
+    signup("a@x.io")
+    client.cookies.clear()
+    client.post("/api/auth/login", json={"email": "a@x.io", "password": "password1", "remember": False})
+    r = client.get("/api/auth/me")
+    assert r.status_code == 200
+    assert "max-age" not in r.headers.get("set-cookie", "").lower()
+
+
+def test_overlong_password_rejected_not_500(client):
+    for pw in ("a" * 100, "é" * 40):  # 100 bytes; 40 chars but 80 bytes
+        r = client.post("/api/auth/signup", json={"email": "b@x.io", "password": pw})
+        assert r.status_code == 422
+
+
+def test_rate_limiter_drops_idle_ips(client):
+    client.post("/api/auth/login", json={"email": "n@x.io", "password": "password1"})
+    attempts = client.app.state.login_attempts
+    for q in attempts.values():
+        q.clear()
+    client.post("/api/auth/login", json={"email": "n@x.io", "password": "password1"})
+    assert len(attempts) == 1
