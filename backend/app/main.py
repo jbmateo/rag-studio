@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 
 from app.auth.routes import router as auth_router
+from app.documents.routes import router as documents_router
 from app.config import Settings
 from app.db import connect, init_db
 from app.embeddings import make_embedder
@@ -21,6 +22,7 @@ def create_app(settings: Settings, embedder=None, llm=None) -> FastAPI:
         conn.close()
 
     app.include_router(auth_router)
+    app.include_router(documents_router)
 
     @app.get("/api/health")
     def health() -> dict:

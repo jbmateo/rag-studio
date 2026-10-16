@@ -47,9 +47,9 @@ def _chunk(row: sqlite3.Row) -> ChunkRow:
 
 def create_document(
     conn, user_id: str, *, name: str, source_type: str, source_url: str | None,
-    file_path: str, size_bytes: int,
+    file_path: str, size_bytes: int, doc_id: str | None = None,
 ) -> Document:
-    doc_id = uuid.uuid4().hex
+    doc_id = doc_id or uuid.uuid4().hex
     conn.execute(
         "INSERT INTO documents(id, user_id, name, source_type, source_url, file_path, size_bytes)"
         " VALUES (?,?,?,?,?,?,?)",

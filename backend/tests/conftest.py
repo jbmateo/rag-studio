@@ -110,3 +110,24 @@ def add_file_doc():
         )
 
     return _add
+
+
+@pytest.fixture
+def as_user(client):
+    """Sign up (or log in if the user exists) as `email`, replacing the client's cookie."""
+
+    def _as(email, password="password1"):
+        client.cookies.clear()
+        r = client.post("/api/auth/signup", json={"email": email, "password": password})
+        if r.status_code != 201:
+            r = client.post("/api/auth/login", json={"email": email, "password": password})
+            assert r.status_code == 200, r.text
+        return r
+
+    return _as
+
+
+@pytest.fixture
+def authed(client, as_user):
+    as_user("authed@example.com")
+    return client
