@@ -7,6 +7,19 @@ import { authErrorMessage, login, signup } from "@/lib/api";
 const input =
   "mt-1 block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm placeholder:text-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/40";
 
+/** Same-origin redirect target from a user-supplied `next`; anything else becomes "/". */
+export function safeNext(next: string | null, origin: string): string {
+  if (!next) return "/";
+  try {
+    const u = new URL(next, origin);
+    if (u.origin !== origin) return "/";
+    // Collapse leading slashes so a path like "//evil.com" can't become protocol-relative.
+    return "/" + (u.pathname + u.search + u.hash).replace(/^\/+/, "");
+  } catch {
+    return "/";
+  }
+}
+
 export default function AuthForm({ mode }: { mode: "login" | "signup" }) {
   const router = useRouter();
   const [ready, setReady] = useState(false);
@@ -29,12 +42,7 @@ export default function AuthForm({ mode }: { mode: "login" | "signup" }) {
       if (isLogin) await login(email, password, remember);
       else await signup(email, password);
       const next = new URLSearchParams(window.location.search).get("next");
-      let dest = "/";
-      if (next) {
-        // Resolve against our origin: backslash/tab tricks like "/\\evil.com" become cross-origin and are rejected.
-        const u = new URL(next, window.location.origin);
-        if (u.origin === window.location.origin) dest = u.pathname + u.search + u.hash;
-      }
+      const dest = safeNext(next, window.location.origin);
       router.push(dest);
       router.refresh();
     } catch (err) {
