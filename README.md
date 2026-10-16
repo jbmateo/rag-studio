@@ -51,7 +51,7 @@ The first ingest downloads the embedding model (about 130 MB).
 LLM=fake EMBEDDER=hash make dev
 ```
 
-This starts the backend on :8000 and the frontend on :3000 with a fake LLM and a hash-based embedder, so the whole UI works offline: upload, search, citations and refusals. The fake LLM returns the first sentence of the top passage plus one deliberately bad citation (`c99`), so citation verification visibly removes it. The hash embedder is not semantic, so search quality is not representative. Real answers need `ANTHROPIC_API_KEY` in `backend/.env` and a plain `make dev`.
+This starts the backend on :8000 and the frontend on :3000 with a fake LLM and a hash-based embedder, so the whole UI works offline: upload, search, citations and refusals. The fake LLM returns the first sentence of the top passage plus one deliberately bad citation (`c99`), so citation verification visibly removes it. It only refuses in two cases: when no passage clears the relevance gate (for example an off-topic question such as "Who won the 1998 world cup?"), or when the question contains the word "unanswerable". The hash embedder is not semantic, so search quality is not representative. Real answers need `ANTHROPIC_API_KEY` in `backend/.env` and a plain `make dev`.
 
 ## Tests and experiments
 
