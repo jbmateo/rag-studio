@@ -11,7 +11,7 @@ import SourcesList from "./SourcesList";
 type CardList = ReturnType<typeof fromChunkRow>[];
 
 export default function Dashboard({ onOpenDocuments }: { onOpenDocuments: () => void }) {
-  const { documents, loading: docsLoading } = useDocuments();
+  const { documents, loading: docsLoading, error: docsError, refresh: refreshDocs } = useDocuments();
   const [unchecked, setUnchecked] = useState<Set<string>>(new Set());
   const [answer, setAnswer] = useState<AskResponse | null>(null);
   const [asking, setAsking] = useState(false);
@@ -87,7 +87,7 @@ export default function Dashboard({ onOpenDocuments }: { onOpenDocuments: () => 
       <div className="grid gap-6 lg:grid-cols-[1fr_2fr_1.5fr]">
         <div className="min-w-0">
           <SourcesList
-            documents={documents} loading={docsLoading} unchecked={unchecked} citedIds={citedIds}
+            documents={documents} loading={docsLoading} error={docsError} onRetry={refreshDocs} unchecked={unchecked} citedIds={citedIds}
             browsingDocId={browsingDocId} onOpenDocuments={onOpenDocuments}
             onToggle={(id) => setUnchecked((prev) => {
               const next = new Set(prev);

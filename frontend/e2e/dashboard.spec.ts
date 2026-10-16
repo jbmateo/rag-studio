@@ -16,3 +16,23 @@ test("ask, click citation highlights chunk, off-topic refuses", async ({ page })
   await page.getByRole("button", { name: "Ask" }).click();
   await expect(page.getByText("Not found in your documents")).toBeVisible();
 });
+
+test("ask 5xx without JSON shows friendly copy and Retry", async ({ page }) => {
+  await signUpFresh(page);
+  await page.route("**/api/ask", (r) => r.fulfill({ status: 500, body: "Internal Server Error" }));
+  await page.getByLabel("Ask a question").fill("anything");
+  await page.getByRole("button", { name: "Ask" }).click();
+  await expect(page.getByText("The answer service is unavailable. Please try again.")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Retry" })).toBeVisible();
+});
+
+test("Sources panel shows load error with Retry", async ({ page }) => {
+  await signUpFresh(page);
+  await page.route("**/api/documents", (r) => r.fulfill({ status: 500, body: "boom" }));
+  await page.reload();
+  await expect(page.getByText("Couldn't load your documents.")).toBeVisible();
+  await expect(page.getByText(/No ready documents/)).toHaveCount(0);
+  await page.unroute("**/api/documents");
+  await page.getByRole("region", { name: "Sources" }).getByRole("button", { name: "Retry" }).click();
+  await expect(page.getByText(/No ready documents/)).toBeVisible();
+});

@@ -3,10 +3,12 @@
 import type { Document } from "@/lib/types";
 
 export default function SourcesList({
-  documents, loading, unchecked, citedIds, browsingDocId, onToggle, onBrowse, onOpenDocuments,
+  documents, loading, error, onRetry, unchecked, citedIds, browsingDocId, onToggle, onBrowse, onOpenDocuments,
 }: {
   documents: Document[];
   loading: boolean;
+  error: string | null;
+  onRetry: () => void;
   unchecked: Set<string>;
   citedIds: Set<string>;
   browsingDocId: string | null;
@@ -20,6 +22,14 @@ export default function SourcesList({
       <h2 className="mb-3 text-sm font-semibold text-slate-900">Sources</h2>
       {loading ? (
         <p className="text-sm text-slate-500">Loading…</p>
+      ) : error ? (
+        <div role="alert" className="space-y-3 text-sm text-red-700">
+          <p>Couldn&apos;t load your documents.</p>
+          <button type="button" onClick={onRetry}
+            className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500">
+            Retry
+          </button>
+        </div>
       ) : ready.length === 0 ? (
         <div className="space-y-3 text-sm text-slate-500">
           <p>No ready documents — upload some in the Documents tab.</p>

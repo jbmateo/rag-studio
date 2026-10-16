@@ -20,7 +20,7 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
     window.location.href = "/login";
   }
   if (!res.ok) {
-    let detail: unknown = res.statusText;
+    let detail: unknown;
     try {
       detail = (await res.json()).detail ?? detail;
     } catch {
@@ -121,6 +121,8 @@ export const listChunks = (docId: string, offset = 0, limit = 50) =>
 export function askErrorMessage(e: unknown): string {
   if (e instanceof ApiError) {
     if (e.status === 422) return "Please enter a question.";
+    if (e.status >= 500 && !(typeof e.detail === "string" && e.detail))
+      return "The answer service is unavailable. Please try again.";
     if (typeof e.detail === "string" && e.detail) return e.detail;
   }
   return "Something went wrong. Please try again.";

@@ -29,7 +29,13 @@ export default function AuthForm({ mode }: { mode: "login" | "signup" }) {
       if (isLogin) await login(email, password, remember);
       else await signup(email, password);
       const next = new URLSearchParams(window.location.search).get("next");
-      router.push(next && next.startsWith("/") && !next.startsWith("//") ? next : "/");
+      let dest = "/";
+      if (next) {
+        // Resolve against our origin: backslash/tab tricks like "/\\evil.com" become cross-origin and are rejected.
+        const u = new URL(next, window.location.origin);
+        if (u.origin === window.location.origin) dest = u.pathname + u.search + u.hash;
+      }
+      router.push(dest);
       router.refresh();
     } catch (err) {
       setError(authErrorMessage(err));

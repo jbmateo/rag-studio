@@ -3,17 +3,17 @@ name = "rag-studio-backend"
 version = "0.1.0"
 requires-python = ">=3.12"
 dependencies = [
-  "fastapi",
+  "fastapi>=0.143",
   "uvicorn[standard]",
-  "pydantic-settings",
+  "pydantic>=2", "pydantic-settings>=2.16",
   "python-multipart",
   "numpy",
-  "fastembed",
-  "anthropic",
+  "fastembed>=0.9",
+  "anthropic>=1.15",
   "pypdf",
   "python-docx",
   "trafilatura",
-  "httpx",
+  "httpx>=0.28",
   "bcrypt",
   "pyyaml",
   "pandas",

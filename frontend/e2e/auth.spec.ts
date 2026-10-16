@@ -31,3 +31,29 @@ test("helper signs up a fresh user and next redirect works", async ({ page }) =>
   await page.getByRole("button", { name: "Log in" }).click();
   await expect(page.getByText(email)).toBeVisible();
 });
+
+test("login ignores cross-origin next (backslash trick)", async ({ page }) => {
+  const email = await signUpFresh(page);
+  await page.getByRole("button", { name: "Log out" }).click();
+  await expect(page).toHaveURL(/\/login/);
+  await page.goto("/login?next=/%5Cevil.example");
+  await page.getByLabel("Email").fill(email);
+  await page.getByLabel("Password").fill("password1");
+  await page.getByRole("button", { name: "Log in" }).click();
+  await expect(page.getByText(email)).toBeVisible();
+  const u = new URL(page.url());
+  expect(u.origin).toBe("http://localhost:3000");
+  expect(u.pathname).toBe("/");
+});
+
+test("login honours a legitimate next with a query", async ({ page }) => {
+  const email = await signUpFresh(page);
+  await page.getByRole("button", { name: "Log out" }).click();
+  await expect(page).toHaveURL(/\/login/);
+  await page.goto("/login?next=/%3Ftab%3Ddocuments");
+  await page.getByLabel("Email").fill(email);
+  await page.getByLabel("Password").fill("password1");
+  await page.getByRole("button", { name: "Log in" }).click();
+  await expect(page.getByText(email)).toBeVisible();
+  expect(new URL(page.url()).search).toBe("?tab=documents");
+});

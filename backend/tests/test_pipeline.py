@@ -91,3 +91,18 @@ def test_ingest_url_unsafe_sets_error(conn, user, storage):
     ingest_document(conn, HashEmbedder(), PipelineConfig(), doc.id)
     d = get_document(conn, user, doc.id)
     assert d.status == "failed" and d.error == "URL points to a non-public address"
+
+
+def test_url_doc_deleted_mid_fetch_leaves_no_file(conn, user, storage, monkeypatch):
+    html = b"<html><body><article><h1>Policy</h1><p>" + b"Refunds are issued within fourteen days. " * 5 + b"</p></article></body></html>"
+    path = storage / "gone.html"
+    doc = create_document(conn, user, name="example.com", source_type="url",
+                          source_url="https://example.com/p", file_path=str(path), size_bytes=0)
+
+    def fetch_and_delete(url):
+        delete_document(conn, user, doc.id)
+        return html, url
+
+    monkeypatch.setattr("app.ingest.pipeline.fetch_url", fetch_and_delete)
+    ingest_document(conn, HashEmbedder(), PipelineConfig(), doc.id)
+    assert not path.exists()

@@ -43,7 +43,8 @@ def ingest_document(conn, embedder: Embedder, cfg: PipelineConfig, doc_id: str) 
             }
             for i, d in enumerate(drafts)
         ]
-        insert_chunks_and_mark_ready_unscoped(conn, doc_id, doc["user_id"], rows)
+        if not insert_chunks_and_mark_ready_unscoped(conn, doc_id, doc["user_id"], rows):
+            path.unlink(missing_ok=True)  # document was deleted mid-ingest; don't orphan its file
     except (ParseError, UnsafeURLError) as e:
         mark_failed_unscoped(conn, doc_id, str(e))
     except Exception:
