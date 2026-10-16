@@ -25,7 +25,7 @@ from research.metrics import summarize, summarize_by
 
 CACHE_DIR = BACKEND_DIR / "research" / "cache"
 DEFAULT_RESULTS = BACKEND_DIR / "research" / "results"
-COLUMNS = ["hit@8", "mrr", "answer_rate", "refusal_precision", "refusal_recall", "citation_validity",
+COLUMNS = ["hit@8", "mrr", "answer_rate", "refusal_precision", "refusal_recall", "citation_validity", "citation_validity_post",
            "unsupported_sentence_rate", "mean_generate_ms", "cost_usd_nominal", "cost_usd_spent"]
 
 

@@ -80,3 +80,12 @@ def test_summarize_by_tag():
     rs = [dict(rec("retrieval_only", ["alpha beta"]), qid="1"), dict(rec("retrieval_only", ["zzz"]), qid="2")]
     by = summarize_by(rs, qs, key="tag")
     assert by["natural"]["hit@8"] == 1.0 and by["exact_term"]["hit@8"] == 0.0
+
+
+def test_citation_validity_post_counts_resolved_shown_citations():
+    r = dict(rec("answered", ["t"]), qid="1",
+             sentences=[{"text": "a", "citations": [1]}, {"text": "b", "citations": [2]}],
+             citations=[{"n": 1, "chunk_id": "x0"}, {"n": 2, "chunk_id": None}])
+    s = summarize([r], [{"qid": "1", "answerable": True, "expected": []}])
+    assert s["citation_validity_post"] == 0.5
+    assert summarize([dict(r, sentences=[], citations=[])], [{"qid": "1", "answerable": True, "expected": []}])["citation_validity_post"] is None

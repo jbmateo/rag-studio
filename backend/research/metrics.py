@@ -63,6 +63,16 @@ def summarize(records: list[dict], questions: list[dict]) -> dict:
             raw_total += len(s["citations"])
             valid += sum(1 for c in s["citations"] if c in labels)
 
+    # Post-verification validity: citation numbers in the shown sentences that resolve to a retrieved chunk.
+    # 1.0 by construction when verification is on; below 1.0 only when it is off.
+    post_total = post_valid = 0
+    for r, _ in llm_pairs:
+        retrieved_ids = {c["chunk_id"] for c in r["retrieved"]}
+        chunk_by_n = {c["n"]: c.get("chunk_id") for c in r.get("citations", [])}
+        for sent in r.get("sentences", []):
+            post_total += len(sent["citations"])
+            post_valid += sum(1 for n in sent["citations"] if chunk_by_n.get(n) in retrieved_ids)
+
     judgments = [j["supported"] for r, _ in pairs for j in r.get("judgments", [])]
     judged = [j for j in judgments if j is not None]
 
@@ -80,6 +90,7 @@ def summarize(records: list[dict], questions: list[dict]) -> dict:
         "refusal_precision": _ratio(correct_refusals, len(refused)),
         "refusal_recall": _ratio(correct_refusals, len(unanswerable)),
         "citation_validity": _ratio(valid, raw_total),
+        "citation_validity_post": _ratio(post_valid, post_total),
         "unsupported_sentence_rate": _ratio(sum(1 for j in judged if not j), len(judged)),
         "judged_sentences": len(judged),
         "judge_unparsed": len(judgments) - len(judged),
