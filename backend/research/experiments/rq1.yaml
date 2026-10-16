@@ -1,0 +1,8 @@
+name: rq1
+llm: false
+judge: false
+base: {}
+variants:
+  - {label: vector, retrieval_mode: vector}
+  - {label: bm25, retrieval_mode: bm25}
+  - {label: hybrid, retrieval_mode: hybrid}

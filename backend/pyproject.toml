@@ -1,0 +1,35 @@
+[project]
+name = "rag-studio-backend"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+  "fastapi>=0.143",
+  "uvicorn[standard]",
+  "pydantic>=2", "pydantic-settings>=2.16",
+  "python-multipart",
+  "numpy",
+  "fastembed>=0.9",
+  "anthropic>=1.15",
+  "pypdf",
+  "python-docx",
+  "trafilatura",
+  "httpx>=0.28",
+  "bcrypt",
+  "pyyaml",
+  "pandas",
+  "matplotlib",
+]
+
+[project.optional-dependencies]
+dev = ["pytest", "httpx", "fpdf2"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["app"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

@@ -1,0 +1,109 @@
+POSTMORTEM: FLEET DISPATCH OUTAGE OF 14 MARCH 2026
+Primary ticket: INC-20260314-07
+Severity: SEV-1
+Status: Reviewed on 2026-03-26, action items tracked until 2026-05-15
+Authors: Imara Kessel (incident commander), Teodor Vance (on-call engineer)
+
+SUMMARY
+
+On Saturday 14 March 2026 the fleet dispatch service stopped assigning work to robots in the Rotterdam region for 1 hour and 53 minutes. During this time 418 of the 1,260 robots in the region lost their connection to the fleet service and stood still, and 37 missions failed. No person was injured and no robot was damaged. The cause was a connection pool leak that had been introduced in firmware release v3.3.1 and that only became visible when a weekend inventory count raised the number of simultaneous missions above the usual weekday level.
+
+This document describes what happened, how we responded, what worked and what did not, and which actions we will take. It follows the blameless format: it names roles and decisions, and it does not look for individuals to blame.
+
+BACKGROUND
+
+The dispatch service receives mission requests, chooses a robot and sends the first waypoints. Each regional deployment keeps a pool of connections to the robots' message broker. In release v3.3.1, shipped on 24 February 2026, a refactoring of the reconnect logic changed the way connections were returned to the pool after a timeout. Connections that timed out while a robot was switching access points were not returned, and the pool slowly shrank.
+
+On normal weekdays the pool recovers because the service restarts every night during the 03:00 maintenance window. On weekends the nightly restart is skipped for the Rotterdam region to avoid interrupting the large Saturday night shift of our biggest customer. As a result the pool had been running for 6 days without a restart when the incident began.
+
+TIMELINE
+
+All times are in UTC.
+
+At 02:17 the monitoring rule FLEET-LAT-HIGH fired, because the median dispatch latency had risen above 5 seconds. The alert was routed to the on-call engineer, who acknowledged it at 02:24 after a first automatic page went unanswered for seven minutes. The delay is discussed in the section on what went poorly.
+
+At 02:31 the first customer ticket arrived, INC-20260314-03, reporting that robots in hall 2 were not picking up new missions. A second ticket, INC-20260314-09, followed at 02:38 from another site. Support linked both tickets to the main incident record.
+
+At 02:41 the on-call engineer declared a SEV-1 and Imara Kessel took over as incident commander. Bram Oosterhoek joined as communications lead and posted the first status page update at 02:49.
+
+At 02:58 the team observed that the number of robots reporting error E-4471 to customers was rising steadily, which means that robots were being treated as offline even though they were powered on and reachable. This ruled out a network problem and pointed at the dispatch service itself.
+
+At 03:05 the connection pool metrics showed that the pool was at its limit of 512 connections, with 509 in use and none returning. A heap comparison with a healthy region confirmed the leak, and engineers traced it to the reconnect change in v3.3.1.
+
+At 03:12 the team decided against a simple restart. A restart would have restored service within minutes, but it would also have destroyed the evidence of the leak and risked a repeat within a few days. The incident commander chose to take a heap dump first and then perform a rollback.
+
+At 03:32 the rollback of the dispatch service to the previous build started. The robots themselves were not touched, because the defect was in the service and not in the robot firmware.
+
+At 03:58 the new instances were healthy and the pool was at 40 connections. Robots began reconnecting in batches of 50 to avoid a thundering herd.
+
+At 04:10 all 418 affected robots had reconnected and the dispatch latency was back to its normal median of 0.4 seconds. The incident commander declared the service restored. The total duration from the first alert to restoration was 1 hour and 53 minutes.
+
+At 04:35 the status page was updated to resolved and the customer in Rotterdam received a direct call from the account manager. Monitoring stayed in heightened mode until 08:00.
+
+IMPACT
+
+The outage affected only the Rotterdam region. Of the 1,260 robots deployed there, 418 lost their connection, which is about 33 percent. The remaining robots continued to execute missions that were already assigned to them, but they did not receive new work, so they went idle once their queue was empty.
+
+In total, 37 missions failed and had to be re-created by the customer. A further 112 missions were delayed by more than 30 minutes. Customers received no financial penalties from us automatically, and the commercial follow up was handled by the account team outside of this document.
+
+The most visible technical symptom for integrators was a flood of rejected commands with error E-4471. The peak was 6,300 rejected commands per minute at 03:20. Some customer clients retried aggressively and added load, which delayed reconnection for a few minutes. Several customers also hit the rate limit and received E-4290.
+
+No data was lost. Telemetry that robots could not deliver was buffered on the robots and uploaded after reconnection.
+
+ROOT CAUSE
+
+The direct cause was the change in v3.3.1 that failed to return timed out connections to the pool. The change had passed code review and all unit tests, because the tests used short lived pools and never ran long enough to exhaust one.
+
+Two further factors allowed the defect to reach production. First, our load test environment restarts the service between test runs and therefore never reproduces a multi day runtime. Second, the dashboard that shows pool usage was not connected to an alert, so the slow shrinking of the pool went unnoticed for six days.
+
+The skipped weekend restart was a contributing factor but not a cause. It is a deliberate customer accommodation and remains in place, but it now has to be accompanied by monitoring that covers long running processes.
+
+WHAT WENT WELL
+
+The decision to take a heap dump before the rollback gave us a clear and reproducible diagnosis within a day. The communications lead kept customers informed at regular intervals of 30 minutes, which customers mentioned positively in follow up calls. The staged reconnection of robots in batches of 50 prevented a second overload.
+
+The runbook for rollback of the dispatch service worked as written, and the build we rolled back to was verified in advance by the release engineer on call. Nobody needed to improvise a procedure.
+
+WHAT WENT POORLY
+
+The first automatic page was not acknowledged for seven minutes. The on-call engineer was driving, and the pager application did not escalate to the secondary engineer until 10 minutes had passed. This delay accounts for a good part of the time between the first alert and the declaration of the SEV-1.
+
+Customer clients that retry without backoff made the situation worse. Our API documentation recommends honouring the Retry-After header, but the integration guides for two customer systems did not mention it.
+
+The status page was updated 32 minutes after the first alert. We want to publish a first update within 15 minutes of declaring any SEV-1.
+
+Finally, the alert FLEET-LAT-HIGH fires on median latency, which only rises when a large fraction of requests is affected. A tail latency alert would have triggered earlier.
+
+WHERE WE GOT LUCKY
+
+The incident happened on a Saturday night, which is a period of moderate load. If the pool had been exhausted on a weekday afternoon, all regions would likely have been affected. The customer's inventory count was also scheduled to finish at 06:00, so most of the failed missions could be repeated before the weekday shift began.
+
+CUSTOMER COMMUNICATION
+
+The communications lead used three channels during the incident: the public status page, direct email to the technical contacts of affected organisations, and phone calls from account managers to the five largest customers in the region. The first status page message was short and stated only that dispatch was degraded in Rotterdam, because we did not yet know the cause. The second message, at 03:19, said that robots might appear offline and that customers should avoid restarting robots, since a restart would not help and would add load.
+
+After the incident, each affected customer received a written summary within two working days. Customers who asked for details received a call from an engineer. Several customers asked whether their own integration could have limited the damage, and the answer was yes: clients that back off when they see E-4471 and that check the robot status before retrying put much less pressure on the service. This led to action item AI-6.
+
+The support team also noted that many customers could not tell the difference between a robot that was offline because of a local Wi-Fi problem and a robot that was offline because of our dispatch service. We will add a field to the robot status that shows whether the connection to the fleet service or the connection to the robot is the problem.
+
+ACTION ITEMS
+
+AI-1: Fix the connection pool leak and add a regression test that runs the pool for the equivalent of seven days. Owner: Teodor Vance. Shipped as a hotfix in v3.3.2 on 2026-03-19.
+
+AI-2: Create an alert that fires when the pool usage stays above 80 percent for 15 minutes. Owner: Imara Kessel. Due 2026-03-27 and completed on 2026-03-26.
+
+AI-3: Change the pager policy so that an unacknowledged page escalates to the secondary engineer after 3 minutes instead of 10. Owner: Bram Oosterhoek. Due 2026-03-31.
+
+AI-4: Add an alert on the 99th percentile of dispatch latency, with a threshold of 2 seconds. Owner: Teodor Vance. Due 2026-04-10.
+
+AI-5: Extend the load test environment with a soak test of 72 hours that runs before every release candidate. Owner: the release engineering team. Due 2026-05-15.
+
+AI-6: Update the integration guides for customer systems to describe retry with backoff and the Retry-After header. Owner: the developer relations team. Due 2026-04-24.
+
+LESSONS
+
+Slow resource leaks are invisible to short tests, to median based alerts and to humans looking at dashboards once a week. The most effective countermeasure is an alert on the resource itself, together with a long running test that asks whether the system is healthy after days and not minutes.
+
+We also learned that an incident process works best when the first ten minutes are boring. The delays of seven minutes and ten minutes in this incident came from a pager configuration and not from any difficulty in the technical work. The response after the declaration of the SEV-1 was fast and well coordinated.
+
+This postmortem was reviewed in the engineering all hands meeting on 2026-03-26. Progress on the remaining action items is reported in the weekly reliability review until the last one is closed.

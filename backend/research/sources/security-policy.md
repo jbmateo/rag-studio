@@ -1,0 +1,101 @@
+# Lumen Robotics Information Security Policy
+
+This policy sets the minimum security rules for everyone who handles Lumen Robotics systems or data, including employees, contractors and interns. It is owned by the security team, reviewed once a year, and approved by the chief technology officer. The current version is 4.1. Questions can be sent to security@lumenrobotics.example.
+
+The policy is written as a set of rules that can be checked. Where a rule cannot be followed for a good reason, request an exception from the security team in writing. Exceptions are recorded, limited in time and reviewed every quarter.
+
+## Scope and responsibilities
+
+The policy applies to all company devices, to private devices that are used for work, to cloud services that process company data, and to the robots and fleet services that we operate for customers. Every person is responsible for protecting the information that they handle and for reporting problems quickly.
+
+Managers make sure that their teams complete the mandatory training and that access rights match the roles of their people. The security team operates the monitoring, runs the vulnerability management programme and leads the response to security incidents. The chief technology officer is accountable to the board for the overall security posture.
+
+## Passwords
+
+Passwords for company accounts must be at least 14 characters long. Long passphrases made of several unrelated words are encouraged over short passwords with symbols. A password must not appear in a list of known breached passwords, and the identity system checks this when a password is set.
+
+Passwords are not rotated on a fixed schedule, because forced rotation leads to weaker choices. A password must be changed immediately if there is any suspicion that it was exposed. Never reuse a company password on another service, and never share a password with a colleague, even for a short time.
+
+All employees must use the company password manager. Passwords for personal accounts should be kept in a separate vault. Storing passwords in documents, chat messages or browser notes is not allowed.
+
+Secrets used by software, such as API client secrets and service account keys, are stored in the secret management system and never in source code. Client secrets for the Lumen Fleet API must be rotated every 180 days. Service accounts have an owner who is responsible for reviewing their permissions every quarter.
+
+## Multi-factor authentication
+
+Multi-factor authentication is required for the identity system, for email, for the source code platform and for every administrative console. Authenticator app codes are accepted for ordinary users. Administrators and engineers with access to production systems must use a hardware security key.
+
+Each user receives a set of recovery codes when multi-factor authentication is enabled. Recovery codes should be printed or stored in the password manager, and a used code cannot be used again. If a second factor is lost, contact the IT service desk, which verifies your identity by a video call with your manager before resetting it.
+
+SMS messages are not accepted as a second factor for any new enrolment, because phone numbers can be taken over by attackers.
+
+## Access control
+
+Access is granted on the principle of least privilege. Each person receives the access that their role needs, and nothing more. Requests are made through the access portal and approved by the system owner. Access to customer fleet data additionally requires approval by the head of customer operations.
+
+Access rights are reviewed every quarter. Managers receive a list of the access rights of their team and must confirm or remove each one within 14 days. Access of leavers is removed at the end of their last working day, and access of people who change teams is reviewed within 5 working days of the change.
+
+Privileged access to production systems is granted just in time. A privileged session expires after 8 hours and every command is logged. Shared administrator accounts are not allowed.
+
+## Company devices
+
+All laptops use full disk encryption with AES-256 and are enrolled in the device management system. The screen must lock automatically after 5 minutes of inactivity, and the operating system and browser must be kept up to date. Critical updates are installed automatically within 72 hours of release.
+
+Only software from the approved catalogue may be installed. Employees may request new software through the IT portal, and the security team reviews the supplier. Removable storage devices are blocked by default. If you need one for a customer commissioning, ask for a temporary exception.
+
+If a device is lost or stolen, report it within 2 hours of noticing, by email to security@lumenrobotics.example or through the 24 hour security hotline. The security team will lock and wipe the device remotely. Report the loss even if you think the device was encrypted and the risk is low. A late report is treated as a policy violation, while a prompt report never is.
+
+## Remote access and VPN
+
+Internal systems can be reached only from the office network or through the company VPN. The VPN is based on WireGuard, and each device has its own key pair. WireGuard keys are rotated every 90 days by the device management system, and a device that is not rotated in time loses access until it is updated.
+
+Split tunnelling is not allowed. All traffic from a company laptop goes through the VPN while it is connected, so that web filtering applies. When you work from a public network such as a hotel or a station, connect the VPN before you open any other application.
+
+Customers and partners never receive VPN access. If they need to reach an internal system, the system owner publishes a service through the partner gateway instead.
+
+## Data classification
+
+Information is classified into four levels. Public information can be shared freely and includes marketing material and published documentation. Internal information is meant for employees, and includes handbooks, internal wiki pages and organisation charts. Confidential information would cause harm if disclosed, and includes customer data, source code, contracts and unreleased product plans. Restricted information would cause serious harm and is limited to named people, such as signing keys for firmware, encryption master keys and personal data of employees.
+
+Documents should carry their classification in the header or file name. When in doubt, treat a document as Confidential. Confidential and Restricted information must not be sent to private email accounts or stored on private cloud services.
+
+All data in transit between company systems and between robots and the fleet service is protected by TLS 1.2 or higher. Data at rest in cloud storage and in databases is encrypted with AES-256, and keys are managed in a hardware backed key service.
+
+## Data retention
+
+Data is kept only as long as there is a business or legal reason. The following periods apply, counted from the date the record was created unless stated otherwise.
+
+Robot telemetry that is visible to customers is retained for 400 days. Operational logs of the fleet service are retained for 13 months. Security logs from the monitoring platform are retained for 18 months, to support investigations that start long after an event.
+
+Customer support tickets are retained for 7 years. Contracts and invoices are retained for 7 years after the end of the contract, in line with tax rules. Employee records are retained for 7 years after the employee leaves the company, and applications from candidates who were not hired are deleted after 6 months.
+
+Daily backups of production databases are retained for 35 days. Email in company mailboxes is retained for 3 years and then deleted automatically. Visitor registrations at reception are deleted after 12 months.
+
+When a customer closes an account, their data is deleted from production systems within 30 days. Copies in backups disappear as the backups expire. Customers can ask for a deletion confirmation, and the security team issues it after the deletion has been verified.
+
+Deletion must be carried out with the approved procedures. Simply emptying a folder is not enough for Restricted data, and hardware that held Confidential or Restricted data is destroyed by a certified supplier, which provides a certificate.
+
+## Vulnerability management
+
+Systems are scanned for vulnerabilities every week, and the results are tracked in the ticket system. The target time for remediation depends on severity. Critical vulnerabilities must be fixed within 7 days, high severity vulnerabilities within 30 days and medium severity vulnerabilities within 90 days. Low severity findings are fixed during normal maintenance.
+
+An external company performs a penetration test of the fleet service and the customer console once a year. The summary of the findings is shared with customers who ask for it under a confidentiality agreement. Researchers who find a vulnerability can report it to security@lumenrobotics.example. We acknowledge reports within 2 working days and do not take legal action against good faith research.
+
+Robot firmware is signed with a Restricted key. The build pipeline refuses to publish an image that is not signed, and robots refuse to install one.
+
+## Reporting and responding to incidents
+
+Everyone must report suspected security incidents immediately. Typical examples are phishing emails that were opened, lost devices, accidental disclosure of data and unusual activity on an account. A report is never held against the person who makes it.
+
+The security team classifies incidents by severity and appoints an incident commander for each SEV-1 and SEV-2. If personal data of customers or employees is affected, the data protection officer decides whether regulators must be notified. Regulators are informed within 72 hours of the moment we become aware of a confirmed personal data breach, and affected customers are informed without undue delay.
+
+After every SEV-1 a blameless postmortem is written within 10 working days. It lists the timeline, the causes and the actions, and the actions are tracked until they are closed.
+
+## Suppliers and physical security
+
+Suppliers that process Confidential data go through a security review before the contract is signed. The review checks certifications, encryption, incident handling and sub-processors, and it is repeated every year for critical suppliers.
+
+The office in Rotterdam is secured by badge access. Visitors are registered, wear a visitor badge and are accompanied at all times in areas with robots in test or with customer data on screens. The test hall is locked outside working hours. Clean desk rules apply: lock your screen and clear whiteboards at the end of a meeting if they show Confidential information.
+
+## Training
+
+New employees complete the security awareness course in their first two weeks, before they receive access to production systems. All employees repeat the course every year and take part in simulated phishing exercises several times a year. People who click on a simulated phishing link receive a short explanation and are not punished. Engineers additionally complete secure coding training every 12 months.

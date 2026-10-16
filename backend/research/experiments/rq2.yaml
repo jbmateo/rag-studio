@@ -1,0 +1,14 @@
+name: rq2
+llm: true
+judge: false
+base: {}
+variants:
+  - {label: min_sim_0.20, min_similarity: 0.20}
+  - {label: min_sim_0.25, min_similarity: 0.25}
+  - {label: min_sim_0.30, min_similarity: 0.30}
+  - {label: min_sim_0.35, min_similarity: 0.35}
+  - {label: min_sim_0.40, min_similarity: 0.40}
+  - {label: min_sim_0.45, min_similarity: 0.45}
+  - {label: min_sim_0.50, min_similarity: 0.50}
+  - {label: min_sim_0.55, min_similarity: 0.55}
+  - {label: min_sim_0.60, min_similarity: 0.60}
