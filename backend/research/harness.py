@@ -87,7 +87,9 @@ def _judge_sentences(judge, resp, retrieved: dict[str, str]) -> list[dict]:
     out = []
     for s in resp.sentences:
         texts = [texts_by_n[n] for n in s.citations if texts_by_n.get(n)]
-        out.append({"text": s.text, "supported": judge.judge_sentence(s.text, texts) if texts else False})
+        # judge_called False: no resolvable cited passage, so it is unsupported by rule, not by the judge.
+        out.append({"text": s.text, "supported": judge.judge_sentence(s.text, texts) if texts else False,
+                    "judge_called": bool(texts)})
     return out
 
 

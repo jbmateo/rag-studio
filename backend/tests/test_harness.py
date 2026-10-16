@@ -65,6 +65,7 @@ def test_run_question_judges_shown_sentences(corpus):
     off = run_question(conn, user, emb, FakeLLM(), PipelineConfig(min_similarity=-1.0, verify_citations=False), q, use_llm=True, judge=J())
     # second sentence cites an unknown label: no text, so unsupported without asking the judge
     assert [j["supported"] for j in off["judgments"]] == [True, False]
+    assert [j["judge_called"] for j in off["judgments"]] == [True, False]
     assert len(seen) == 1 and len(seen[0][1]) == 1
     on = run_question(conn, user, emb, FakeLLM(), PipelineConfig(min_similarity=-1.0), q, use_llm=True, judge=J())
     assert [j["supported"] for j in on["judgments"]] == [True]

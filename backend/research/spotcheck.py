@@ -29,7 +29,10 @@ def _latest_jsonl(rq_dir: Path) -> Path:
 
 
 def judged_sentences(path: Path) -> list[dict]:
-    """One row per sentence that has a usable judge verdict (judgments[i] pairs with sentences[i])."""
+    """One row per sentence the judge actually judged (judgments[i] pairs with sentences[i]).
+
+    Sentences with no resolvable cited passage were marked unsupported without a judge call and are skipped.
+    """
     rows = []
     for line in path.read_text().splitlines():
         rec = json.loads(line)
@@ -38,7 +41,7 @@ def judged_sentences(path: Path) -> list[dict]:
         text_by_chunk = {c["chunk_id"]: c["text"] for c in rec["retrieved"]}
         chunk_by_n = {c["n"]: c["chunk_id"] for c in rec["citations"]}
         for sentence, judgment in zip(rec["sentences"], rec["judgments"]):
-            if judgment["supported"] is None:
+            if judgment["supported"] is None or not judgment.get("judge_called", False):
                 continue
             passages = [text_by_chunk[chunk_by_n[n]] for n in sentence["citations"]
                         if chunk_by_n.get(n) in text_by_chunk]
@@ -50,16 +53,35 @@ def judged_sentences(path: Path) -> list[dict]:
     return rows
 
 
+def stratified_sample(rows: list[dict]) -> list[dict]:
+    """Up to SAMPLES/2 per judge_label, topping up from the other label if one is short (seed 7)."""
+    rng = random.Random(SEED)
+    pools = {lab: [r for r in rows if r["judge_label"] == lab] for lab in ("supported", "unsupported")}
+    for pool in pools.values():
+        rng.shuffle(pool)
+    half = SAMPLES // 2
+    take = {lab: min(half, len(pool)) for lab, pool in pools.items()}
+    for lab, other in (("supported", "unsupported"), ("unsupported", "supported")):
+        short = half - take[lab]
+        if short > 0:
+            take[other] = min(len(pools[other]), take[other] + short)
+    sample = pools["supported"][:take["supported"]] + pools["unsupported"][:take["unsupported"]]
+    rng.shuffle(sample)
+    return sample
+
+
 def export(results_dir: Path, out: Path | None = None) -> Path:
     rq3 = Path(results_dir) / "rq3"
     rows = judged_sentences(_latest_jsonl(rq3))
-    sample = random.Random(SEED).sample(rows, min(SAMPLES, len(rows)))
+    sample = stratified_sample(rows)
     out = out or rq3 / "spotcheck.csv"
     with out.open("w", newline="", encoding="utf-8") as f:
         w = csv.DictWriter(f, fieldnames=FIELDS)
         w.writeheader()
         for i, r in enumerate(sample, 1):
             w.writerow({"id": i, **r, "human_label": ""})
+    n_sup = sum(r["judge_label"] == "supported" for r in sample)
+    print(f"stratified on judge_label: {n_sup} supported, {len(sample) - n_sup} unsupported (seed {SEED})")
     print(f"wrote {len(sample)} rows to {out}; fill human_label with supported or unsupported")
     return out
 
@@ -74,7 +96,8 @@ def _parse(label: str) -> bool:
 
 
 def score(path: Path) -> dict:
-    rows = list(csv.DictReader(Path(path).open(newline="", encoding="utf-8")))
+    with Path(path).open(newline="", encoding="utf-8") as f:
+        rows = list(csv.DictReader(f))
     blank = [r for r in rows if not r["human_label"].strip()]
     if blank:
         raise ValueError(f"{len(blank)} of {len(rows)} rows have no human_label: label every row first")

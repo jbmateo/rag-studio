@@ -53,7 +53,7 @@ def judged_record(qid, variant, n):
         "retrieved": [{"chunk_id": "x1", "document_name": "a.md", "text": "Passage one."}],
         "sentences": [{"text": f"{qid} sentence {i}", "citations": [1]} for i in range(n)],
         "citations": [{"n": 1, "chunk_id": "x1"}],
-        "judgments": [{"text": f"{qid} sentence {i}", "supported": i % 2 == 0} for i in range(n)],
+        "judgments": [{"text": f"{qid} sentence {i}", "supported": i % 2 == 0, "judge_called": True} for i in range(n)],
     }
 
 
@@ -74,7 +74,7 @@ def test_export_is_deterministic_and_has_blank_human_labels(tmp_path):
     spotcheck.main(["export", "--results-dir", str(res), "--out", str(out1)])
     spotcheck.main(["export", "--results-dir", str(res), "--out", str(out2)])
     assert out1.read_text() == out2.read_text()
-    rows = list(csv.DictReader(out1.open()))
+    rows = list(csv.DictReader(out1.read_text().splitlines()))
     assert len(rows) == 30
     assert all(r["human_label"] == "" for r in rows)
     assert {"sentence", "cited_passages", "judge_label", "human_label"} <= set(rows[0])
@@ -107,3 +107,28 @@ def test_score_refuses_while_blank(tmp_path, capsys):
     write_labelled(p, [("supported", "supported"), ("supported", "")])
     assert spotcheck.main(["score", "--csv", str(p)]) == 1
     assert "1 of 2 rows have no human_label" in capsys.readouterr().err
+
+
+def test_export_skips_unjudged_and_stratifies(tmp_path):
+    res = tmp_path / "results"
+    d = res / "rq3"
+    d.mkdir(parents=True)
+    recs = [{"type": "header"}]
+    # 40 judged sentences, 36 supported and 4 unsupported, plus 5 no-passage sentences (supported False, not judged)
+    for i in range(40):
+        r = judged_record(f"q{i:03d}", "verify_on", 1)
+        r["judgments"] = [{"text": "x", "supported": i >= 4, "judge_called": True}]
+        recs.append(r)
+    for i in range(5):
+        r = judged_record(f"n{i:03d}", "verify_off", 1)
+        r["sentences"] = [{"text": f"NOPASSAGE {i}", "citations": [9]}]
+        r["judgments"] = [{"text": "x", "supported": False, "judge_called": False}]
+        recs.append(r)
+    (d / "20260101T000000Z.jsonl").write_text("\n".join(json.dumps(x) for x in recs))
+    out = tmp_path / "o.csv"
+    spotcheck.main(["export", "--results-dir", str(res), "--out", str(out)])
+    rows = list(csv.DictReader(out.read_text().splitlines()))
+    assert len(rows) == 30
+    assert not any("NOPASSAGE" in r["sentence"] for r in rows)
+    assert all(r["cited_passages"] for r in rows)
+    assert sum(r["judge_label"] == "unsupported" for r in rows) == 4  # short stratum: all 4, rest filled from supported

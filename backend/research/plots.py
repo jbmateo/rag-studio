@@ -6,7 +6,6 @@ An RQ without results yet is skipped with a printed notice. PNGs go to research/
 """
 import argparse
 import json
-import sys
 from pathlib import Path
 
 import matplotlib
@@ -164,4 +163,3 @@ def main(argv: list[str] | None = None) -> list[Path]:
 
 if __name__ == "__main__":
     main()
-    sys.exit(0)
