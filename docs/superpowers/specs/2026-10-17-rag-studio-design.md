@@ -1,20 +1,35 @@
-# RAG Studio — Design Spec
+# RAG Studio — R&D Design Spec
 
 **Date:** 2026-10-17
-**Status:** Approved design, pending implementation plan
+**Status:** Design approved; spec under review
 
 ## 1. Purpose
 
-A portfolio project demonstrating knowledge-based AI: a multi-user web app where users upload documents and ask questions answered **only** from those documents, with clickable citations, and an explicit refusal when the evidence is missing.
+**An R&D project on grounded, abstaining question answering.** The question under study: *how do you build a document-QA system that answers only from evidence, cites it precisely, and refuses when evidence is missing — and how do you measure that?*
 
-Audience: interviewers / reviewers. Success means:
-- A reviewer can clone, run one command, sign up, upload, ask, and click a citation to the exact supporting chunk.
-- Off-topic or unsupported questions are refused rather than guessed.
-- Measurable rigor: an eval script reports refusal accuracy and citation validity.
+The deliverable has two halves:
+1. **Research testbed** — a working multi-user web app (upload documents, ask questions, clickable citations, explicit refusals) whose pipeline components are configurable so they can be studied.
+2. **Research output** — controlled experiments over that pipeline, reported in `FINDINGS.md` with method, results, charts, and limitations (including negative results).
+
+Audience: interviewers / reviewers evaluating research and engineering ability. Success means:
+- Each research question (§2) has a reproducible experiment and a written, evidence-backed answer.
+- A reviewer can clone, run one command, use the app end-to-end, and re-run the experiments with one command.
+- The shipped app uses the configuration the experiments found best, and `FINDINGS.md` says why.
+
+## 2. Research questions
+
+| ID | Question | Independent variable | Primary metrics |
+|---|---|---|---|
+| RQ1 | Does hybrid retrieval beat vector-only and BM25-only on mixed natural-language and exact-term questions? | `retrieval_mode`: vector / bm25 / hybrid | hit@8, MRR |
+| RQ2 | How does the relevance threshold trade answer rate against refusal accuracy? | `MIN_SIMILARITY` swept 0.20–0.60 in 0.05 steps | answer rate (answerable), refusal precision/recall (unanswerable); plotted as a trade-off curve |
+| RQ3 | Does server-side citation verification catch unsupported or fabricated citations that prompting alone lets through? | `verify_citations`: on / off | citation validity rate, unsupported-sentence rate |
+| RQ4 | How does chunk size affect retrieval and answer quality? | `chunk_chars`: 1000 / 2000 / 4000 | hit@8, answer rate, citation validity |
+
+Hypotheses are stated in `FINDINGS.md` before results are recorded. Each run holds all other variables at the default configuration.
 
 Built fresh; the earlier `rag-doc-qa` Streamlit prototype is not reused.
 
-## 2. Repository layout
+## 3. Repository layout
 
 One git repo, two sibling apps:
 
@@ -24,16 +39,18 @@ rag-studio/
 ├── backend/         FastAPI, Python 3.11+, own .venv
 │   ├── app/         auth, ingest, retrieve, answer, storage modules
 │   ├── tests/
-│   ├── evals/       sample docs, labelled questions, run_eval.py, results.md
+│   ├── research/    corpus/, questions.jsonl, experiments/*.yaml, run_experiment.py,
+│   │                results/ (raw JSONL per run, committed), plots/
 │   └── storage/     uploaded originals (gitignored) + app.db (gitignored)
 ├── docs/superpowers/specs/
-├── Makefile         `make setup`, `make dev` (runs both), `make test`, `make eval`
-└── README.md
+├── FINDINGS.md      research report: questions, hypotheses, method, results, limitations
+├── Makefile         `make setup`, `make dev` (runs both), `make test`, `make experiments`
+└── README.md        project overview, links to FINDINGS.md, how to run app + experiments
 ```
 
 The frontend reaches the backend only over HTTP. Next.js rewrites `/api/*` to FastAPI (`http://localhost:8000`) so cookies are same-origin and no CORS is needed.
 
-## 3. Stack
+## 4. Stack
 
 | Concern | Choice |
 |---|---|
@@ -45,10 +62,11 @@ The frontend reaches the backend only over HTTP. Next.js rewrites `/api/*` to Fa
 | Parsing | pypdf (PDF), python-docx (DOCX), trafilatura (HTML), httpx (URL fetch) |
 | Auth | bcrypt password hashes, server-side sessions, httpOnly cookie |
 | Tests | pytest (+ FastAPI TestClient), Playwright smoke test |
+| Research | PyYAML configs, JSONL results, pandas + matplotlib for summaries and plots |
 
 Python 3.11+ must be installed (system has 3.9); README documents `brew install python@3.12` or uv.
 
-## 4. Data model (SQLite)
+## 5. Data model (SQLite)
 
 - `users(id, email UNIQUE, password_hash, created_at)`
 - `sessions(token_hash PK, user_id FK, expires_at, created_at)`
@@ -58,7 +76,7 @@ Python 3.11+ must be installed (system has 3.9); README documents `brew install 
 
 All document/chunk access goes through a data-layer function that requires `user_id`.
 
-## 5. Auth & sessions
+## 6. Auth & sessions
 
 - Sign up: email + password (min 8 chars), bcrypt-hashed. Signs the user in.
 - Log in: issues a random 256-bit token; only its SHA-256 is stored. Cookie `session`: httpOnly, `SameSite=Lax`, `Secure` in production.
@@ -69,7 +87,7 @@ All document/chunk access goes through a data-layer function that requires `user
 
 Endpoints: `POST /api/auth/signup`, `POST /api/auth/login`, `POST /api/auth/logout`, `GET /api/auth/me`.
 
-## 6. Ingestion
+## 7. Ingestion
 
 1. `POST /api/documents` — multipart file **or** JSON `{url}`. Validates type (pdf, docx, md, txt, html) and size (≤ 20 MB). Saves original to `storage/{user_id}/{doc_id}.{ext}`, inserts `documents` row with `status=processing`, returns it immediately.
 2. Background task (FastAPI `BackgroundTasks`) parses into location-labelled text segments:
@@ -89,12 +107,12 @@ Other document endpoints:
 
 Another user's `doc_id` returns 404.
 
-## 7. Question answering
+## 8. Question answering
 
 `POST /api/ask {question, doc_ids?: string[]}`
 
 1. **Scope:** the caller's `ready` documents, optionally restricted to `doc_ids`. If none: `400 "Upload a document first"`.
-2. **Hybrid retrieval:** top 20 by cosine similarity + top 20 by FTS5 BM25 → reciprocal rank fusion (k=60) → top 8.
+2. **Hybrid retrieval** (default `retrieval_mode=hybrid`): top 20 by cosine similarity + top 20 by FTS5 BM25 → reciprocal rank fusion (k=60) → top 8. In `vector` or `bm25` mode only that ranking is used, and Gate 1 applies only its own half of the condition.
 3. **Gate 1 — relevance:** if max cosine similarity < `MIN_SIMILARITY` (config, start 0.35) **and** no chunk contains at least half of the question's non-stopword terms (a "strong BM25 hit" — this keeps exact-term queries like codes or names from being refused), return `status: "not_found"` with the closest chunks for transparency. No LLM call.
 4. **Generation:** chunks are labelled `c1…c8` with document name + location. System prompt: answer only from the passages; every sentence must cite; if the passages don't answer, say so. Claude must call tool `submit_answer`:
    ```json
@@ -120,7 +138,7 @@ Another user's `doc_id` returns 404.
    Citation numbers are assigned in first-appearance order.
 7. **Errors:** Claude API error/timeout (30 s) → `502` with retryable message, never a fabricated answer. Malformed tool output → one retry, then `insufficient_evidence`.
 
-## 8. Frontend
+## 9. Frontend
 
 Routes: `/login`, `/signup`, `/` (protected).
 
@@ -140,20 +158,37 @@ Layout (desktop): search bar full width; below, a left column with Sources, a ce
 - Table: name, type, size, status (processing spinner / ready with chunk count / failed with error tooltip), uploaded date, delete button with confirm dialog.
 - Polls `GET /api/documents` every 2 s while any document is `processing`.
 
-## 9. Testing & evaluation
+## 10. Testing
 
 **Backend unit (pytest):** chunker (boundaries, overlap, locations), each parser with small fixtures, RRF fusion, citation verifier (fake IDs dropped; uncited sentences dropped; all dropped → refusal), URL safety checks.
 
 **Backend API (TestClient, temp DB, Claude stubbed):** signup/login/me/logout, remember-me cookie attributes, rate limit, cross-user isolation (B cannot list/read/delete/ask over A's docs), upload → ready → list → chunks → delete, Gate 1 path makes no LLM call.
 
-**Eval harness** (`backend/evals/run_eval.py`, uses real Claude): bundled sample documents + ~20 labelled questions (~12 answerable with expected supporting document/location, ~8 plausible but unanswerable). Reports retrieval hit@8, answer rate on answerable, refusal precision/recall on unanswerable, citation validity rate. Writes `evals/results.md`.
-
 **Frontend:** `tsc --noEmit`, lint, and one Playwright smoke test: sign up → upload sample PDF → wait for ready → ask → click `[1]` → chunk highlighted → ask off-topic → refusal shown.
 
-## 10. Configuration
+## 11. Research methodology
 
-`backend/.env`: `ANTHROPIC_API_KEY`, `CLAUDE_MODEL` (default `claude-sonnet-5-5`), `MIN_SIMILARITY`, `DATABASE_PATH`, `STORAGE_DIR`, `COOKIE_SECURE`. `.env.example` committed; `.env` gitignored.
+**Configurable pipeline.** The ingest/retrieve/answer modules take a `PipelineConfig` (`retrieval_mode`, `min_similarity`, `verify_citations`, `chunk_chars`, `top_k`, `model`) rather than reading globals. The web app builds it from `.env`; the experiment runner builds it from YAML. This is what makes the app a testbed.
 
-## 11. Out of scope (v1)
+**Dataset** (`backend/research/`):
+- `corpus/` — 5–8 public-domain or self-written documents covering all supported formats (PDF, DOCX, MD, TXT, HTML), mixing prose with exact-term content (IDs, numbers, names).
+- `questions.jsonl` — ~60 hand-labelled questions: ~40 answerable (each with expected document + location, tagged `natural` or `exact_term`) and ~20 unanswerable but plausible (topic-adjacent, not merely off-topic). Labelling guidelines are written in `FINDINGS.md`.
 
-OCR for scanned PDFs, streaming responses, chat history / follow-ups, password reset / email verification, deployment, document sharing between users. Listed in README as next steps.
+**Runner** (`run_experiment.py experiments/rq1.yaml`): ingests the corpus into an isolated temp DB per chunk configuration, runs every question for every config variant, writes raw per-question records (retrieved IDs, ranks, scores, status, sentences, citations, timings, cost) to `results/<rq>/<timestamp>.jsonl`, and prints a summary table. Temperature 0; Claude responses cached by (config, question) hash so re-runs are cheap and reproducible. Retrieval-only metrics (RQ1, RQ4 hit@8) need no LLM calls.
+
+**Metrics:**
+- hit@8 / MRR — expected location appears in retrieved top 8 / reciprocal rank of first match.
+- answer rate — share of answerable questions returning `answered` or `partial`.
+- refusal precision / recall — over `not_found` + `insufficient_evidence` outcomes vs the unanswerable label.
+- citation validity — share of citations pointing to a retrieved chunk.
+- unsupported-sentence rate — share of sentences whose cited chunks do not support them, judged by a separate Claude call with a fixed rubric; the judge is spot-checked by hand on 30 samples and its agreement rate reported.
+
+**Reporting.** `make experiments` runs all four RQs and regenerates `plots/` (matplotlib: RQ1 grouped bars by question tag, RQ2 answer-rate vs refusal-recall curve, RQ3 before/after bars, RQ4 line chart). `FINDINGS.md` is written by hand from these results with sections: Question & hypothesis → Method → Results (table + plot) → Interpretation → Threats to validity (small dataset, single domain, LLM-judge bias, self-written questions). The shipped default config is justified by these findings.
+
+## 12. Configuration
+
+`backend/.env`: `ANTHROPIC_API_KEY`, `CLAUDE_MODEL` (default `claude-sonnet-5-5`), `RETRIEVAL_MODE` (default `hybrid`), `MIN_SIMILARITY`, `VERIFY_CITATIONS` (default on), `CHUNK_CHARS`, `DATABASE_PATH`, `STORAGE_DIR`, `COOKIE_SECURE`. `.env.example` committed; `.env` gitignored. Defaults are updated to whatever the experiments support.
+
+## 13. Out of scope (v1)
+
+OCR for scanned PDFs, streaming responses, chat history / follow-ups, password reset / email verification, deployment, document sharing between users, an in-app experiments UI, public benchmark datasets (e.g. SQuAD 2.0 unanswerables) — candidates for follow-up research. Listed in README as next steps.
