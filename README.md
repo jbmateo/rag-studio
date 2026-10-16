@@ -2,6 +2,8 @@
 
 RAG Studio is an R&D project on grounded, abstaining document question answering: how do you build a system that answers only from the user's own documents, cites its evidence precisely, and refuses when the evidence is missing, and how do you measure that? It has two halves. The first is a working multi-user web app (upload PDF, DOCX, Markdown, text or HTML, or import a URL, then ask questions and click through numbered citations to the source passage). The second is a research harness that runs controlled experiments over the same configurable pipeline, on a self-written corpus and 60 labelled questions, to study retrieval mode, relevance threshold, citation verification and chunk size. The method, hypotheses, dataset and limitations are in [FINDINGS.md](FINDINGS.md); the design is in [docs/design/2026-10-17-rag-studio-design.md](docs/design/2026-10-17-rag-studio-design.md).
 
+**Status:** RQ1 complete; RQ2–RQ4 pre-registered, tooling ready, not yet run (needs API credits).
+
 ![Dashboard, desktop](docs/screenshots/dashboard-desktop.png)
 
 <img src="docs/screenshots/dashboard-mobile.png" alt="Dashboard, mobile" width="320">
@@ -43,6 +45,14 @@ make dev                            # backend on :8000, frontend on :3000
 
 The first ingest downloads the embedding model (about 130 MB).
 
+### Running without an API key
+
+```bash
+LLM=fake EMBEDDER=hash make dev
+```
+
+This starts the backend on :8000 and the frontend on :3000 with a fake LLM and a hash-based embedder, so the whole UI works offline: upload, search, citations and refusals. The fake LLM returns the first sentence of the top passage plus one deliberately bad citation (`c99`), so citation verification visibly removes it. The hash embedder is not semantic, so search quality is not representative. Real answers need `ANTHROPIC_API_KEY` in `backend/.env` and a plain `make dev`.
+
 ## Tests and experiments
 
 ```bash
@@ -54,7 +64,7 @@ make experiments   # runs rq1 to rq4, then regenerates research/plots/
 
 ## Key results
 
-Only RQ1 has been run so far. Retrieval over 40 answerable questions (hit@8 and MRR; 20 `natural`, 20 `exact_term`), default chunk size 2000. See the [plot](backend/research/plots/rq1_retrieval.png) and the hypotheses in [FINDINGS.md](FINDINGS.md).
+Only RQ1 has been run so far. Retrieval over 40 answerable questions (hit@8 and MRR; 20 `natural`, 20 `exact_term`), default chunk size 2000. See the [plot](backend/research/plots/rq1_retrieval.png) and the full write-up in [FINDINGS.md](FINDINGS.md). H1 is rejected on both runs: hybrid's `exact_term` hit@8 gain over vector was +0 points (original chunker) and +5 points (packed chunker), against the 10 points the hypothesis required.
 
 | Mode | hit@8 overall | hit@8 natural | hit@8 exact_term | MRR overall |
 |---|---|---|---|---|
@@ -66,10 +76,10 @@ These numbers are from the re-run under the packing chunker (`20261016T200121Z.j
 
 | Research question | Result |
 |---|---|
-| RQ1 retrieval mode | see table above (interpretation pending) |
-| RQ2 relevance threshold | pending: run `make experiments` |
-| RQ3 citation verification | pending: run `make experiments` |
-| RQ4 chunk size | pending: run `make experiments` |
+| RQ1 retrieval mode | H1 rejected on both runs (`exact_term` gain +0 / +5 points, needed 10); hybrid best or tied on overall hit@8 |
+| RQ2 relevance threshold | pre-registered, not run (needs API credits) |
+| RQ3 citation verification | pre-registered, not run (needs API credits) |
+| RQ4 chunk size | pre-registered, not run (needs API credits) |
 
 ## Next steps
 

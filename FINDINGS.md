@@ -2,7 +2,7 @@
 
 ## About this report
 
-This report documents the research behind RAG Studio, a document question answering system that cites its sources and refuses to answer when the documents do not support an answer. It studies four questions: whether hybrid retrieval beats vector and keyword retrieval, how the relevance threshold trades answer rate against refusal accuracy, whether server side citation verification catches unsupported citations, and how chunk size affects retrieval and answers. The sections for each experiment, with hypotheses, method, results and interpretation, are added after the experiments have been run. This version describes the dataset that every experiment uses.
+This report documents the research behind RAG Studio, a document question answering system that cites its sources and refuses to answer when the documents do not support an answer. It studies four questions: whether hybrid retrieval beats vector and keyword retrieval, how the relevance threshold trades answer rate against refusal accuracy, whether server side citation verification catches unsupported citations, and how chunk size affects retrieval and answers. RQ1 has been run (twice, see Amendment 2) and is written up below. RQ2 to RQ4 are pre-registered and their tooling is built, but they have not been run, because they need paid Claude API calls; their sections are added when they are run. The dataset that every experiment uses is described first.
 
 ## Research questions and hypotheses
 
@@ -79,3 +79,82 @@ Within each document the evidence is spread through the text. As a fraction of t
 ### Known limitations
 
 The corpus and the questions were written by the same author, so question wording may echo the author's habits, and the `natural` paraphrases are probably easier than questions that real users would ask. The domain is a single fictional company with a technical, English language register; results may not transfer to legal, medical or conversational text. The corpus is small (about 10,900 words) compared with a real document collection, so retrieval is easier than at scale, and with 60 questions the differences between configurations must be large to be distinguishable from noise. Unanswerable questions are adjacent by design, so refusal accuracy here is a hard case and not an average case. Labels were checked by script and by hand but not by a second annotator. Finally, two facts are intentionally stated in two documents (for example the 256 waypoint limit and the LR7-S1 firmware requirement), so a retrieved chunk from the second document may be a correct answer that the label does not credit when the question lists only one of them.
+
+## RQ1: Hybrid vs vector vs BM25 retrieval
+
+### Method
+
+RQ1 measures retrieval only: no LLM call and no API spend. For each of the 60 questions the harness retrieves the top 8 chunks in each of three modes and compares them with the labelled evidence. A retrieved chunk is a hit when it contains the evidence string of the expected document. hit@8 is the share of answerable questions with at least one hit in the top 8, and MRR is the mean reciprocal rank of the first hit; both are computed on the 40 answerable questions (20 `natural`, 20 `exact_term`). The 20 unanswerable questions are in the run but do not enter these metrics.
+
+The modes are vector (local `BAAI/bge-small-en-v1.5` embeddings), BM25 (SQLite FTS5) and hybrid (20 vector and 20 BM25 candidates fused by reciprocal rank fusion with k=60). All use top 8 and chunk size 2000. Only the retrieval mode varies.
+
+RQ1 was run twice, because the chunker was changed after the first run (Amendment 2):
+
+| Run | Chunker | Raw records | Summary |
+|---|---|---|---|
+| Original | Chunks never cross segment boundaries | `backend/research/results/rq1/20261016T193404Z.jsonl` | `backend/research/results/rq1/summary-original-chunker.json` |
+| Packed | Consecutive segments packed into blocks up to `chunk_chars` | `backend/research/results/rq1/20261016T200121Z.jsonl` | `backend/research/results/rq1/summary.json` |
+
+### Results
+
+All values are from the two summary files. n is 40 overall and 20 per tag; one question is 2.5 points overall and 5 points within a tag.
+
+**Original chunker** (`summary-original-chunker.json`)
+
+| Mode | hit@8 overall | hit@8 natural | hit@8 exact_term | MRR overall | MRR natural | MRR exact_term |
+|---|---|---|---|---|---|---|
+| vector | 0.975 | 1.000 | 0.950 | 0.826 | 0.823 | 0.829 |
+| bm25 | 0.900 | 0.800 | 1.000 | 0.676 | 0.442 | 0.910 |
+| hybrid | 0.975 | 1.000 | 0.950 | 0.796 | 0.668 | 0.925 |
+
+**Packed chunker** (`summary.json`)
+
+| Mode | hit@8 overall | hit@8 natural | hit@8 exact_term | MRR overall | MRR natural | MRR exact_term |
+|---|---|---|---|---|---|---|
+| vector | 0.950 | 0.950 | 0.950 | 0.686 | 0.704 | 0.668 |
+| bm25 | 0.875 | 0.750 | 1.000 | 0.702 | 0.454 | 0.950 |
+| hybrid | 0.975 | 0.950 | 1.000 | 0.716 | 0.678 | 0.754 |
+
+![RQ1 retrieval by mode and tag, packed chunker](backend/research/plots/rq1_retrieval.png)
+
+The plot shows the packed-chunker run (`summary.json`).
+
+### H1 verdict
+
+H1 is **rejected on both runs**. The rejection comes from one clause, the `exact_term` gain; the other two clauses hold.
+
+| Clause | Original chunker | Packed chunker |
+|---|---|---|
+| `exact_term`: hybrid at least 10 points above vector (rejected if under 10) | 0.950 vs 0.950, gain +0 points: fails | 1.000 vs 0.950, gain +5 points: fails |
+| `natural`: hybrid not more than 5 points below vector | 1.000 vs 1.000, gap 0 points: holds | 0.950 vs 0.950, gap 0 points: holds |
+| Overall: hybrid at least as high as the better single mode | 0.975 vs best single 0.975 (vector): holds, tied | 0.975 vs best single 0.950 (vector): holds |
+
+Because the rejection rule is that H1 fails if the `exact_term` gain is under 10 points, a single failed clause is enough.
+
+### Interpretation
+
+Vector retrieval was already close to the ceiling on `exact_term` (0.95 under both chunkers), so a 10-point gain was almost out of reach: the best possible hybrid score is 1.00, which is 5 points above 0.95. The 10-point threshold was set without a pilot run, and that is a lesson for the next pre-registration: check the headroom of the baseline on a few questions before fixing a threshold.
+
+BM25 alone reaches 1.000 hit@8 on `exact_term` under both chunkers but drops on `natural` (0.800 original, 0.750 packed, against 0.950 to 1.000 for vector). Under the packed chunker, hybrid matches BM25 on `exact_term` (1.000) and matches vector on `natural` (0.950). Under the original chunker hybrid matched vector on both tags (0.950 and 1.000) and did not reach BM25's 1.000 on `exact_term`, so the combination of strengths appears in the packed run only. Each difference between hybrid and the better single mode on a tag is one or two questions, so this is suggestive and not established.
+
+MRR separates the modes more than hit@8 on the tags, where the first correct chunk's rank matters: on `exact_term` under the packed chunker, hit@8 differs by 5 points between vector and BM25 (0.950 and 1.000) while MRR differs by 28.2 points (0.668 and 0.950); on `natural`, BM25 trails vector by 20 points on hit@8 (0.750 vs 0.950) and by 25.0 points on MRR (0.454 vs 0.704). The overall columns do not show this: under the packed chunker the overall MRR spread is 3.0 points (0.686 to 0.716) against 10 points for hit@8. Hybrid does not rank best everywhere: under the original chunker vector has the highest overall MRR (0.826, against 0.796 for hybrid), and on `exact_term` BM25 has the highest MRR under the packed chunker (0.950, against 0.754 for hybrid).
+
+The chunker change moved hit@8 by at most 2.5 points overall (vector 0.975 to 0.950, BM25 0.900 to 0.875, hybrid unchanged) and by at most 5 points within a tag, which is inside the noise band this report declares (about 10 points on 60 questions). MRR moved more: vector overall fell from 0.826 to 0.686 (14.0 points), hybrid from 0.796 to 0.716 (8.0 points) and BM25 rose from 0.676 to 0.702 (2.6 points). The vector and hybrid MRR drops are at or above the noise band, so the chunker affects how highly the evidence ranks more than whether it is found in the top 8. This experiment does not identify the cause of the MRR shift. Packing produces fewer and larger chunks (see Threats to validity), and one plausible reason is that more passages compete within each chunk, but that was not tested.
+
+### Threats to validity
+
+- **Small, single-domain, self-written dataset.** 40 answerable questions, one fictional company, one author for corpus and questions (see Known limitations above). The differences reported here are a few questions each.
+- **Ceiling effect.** Vector retrieval scores 0.95 or 0.975 on hit@8, so hit@8 has little room to separate the modes. This is the main reason H1's `exact_term` clause could not be met.
+- **One embedding model.** Only `BAAI/bge-small-en-v1.5` was used. A weaker embedding model would leave more room for BM25 and hybrid to help, and a stronger one less.
+- **hit@8 is generous at this corpus size.** With the packed chunker at chunk size 2000, the six documents produce 45 chunks in total (api-reference 7, employee-handbook 11, incident 6, product-spec 7, release-notes 7, security-policy 7), so the top 8 covers about 18% of all chunks. With the original chunker the total was 113 (12, 11, 53, 11, 13, 13 from the Amendment 2 table), so the top 8 covered about 7%. A larger collection would make hit@8 a harder test.
+- **Two runs, one pre-registered hypothesis.** The packed run is a re-run after a chunker fix made while other results existed. Both runs are reported and neither is preferred; they agree on the verdict.
+
+## RQ2–RQ4: pre-registered, not yet run
+
+RQ2 (relevance threshold), RQ3 (citation verification) and RQ4 (chunk size) need paid Claude API calls, for answer generation and, in RQ3, for the judge. They were not run for budget reasons. No result for them exists, and none is implied. Their hypotheses and rejection conditions are in the table and the two amendments above, fixed in git before any of these runs.
+
+The tooling is built and tested with a fake LLM. `make experiments` runs all four experiments and then regenerates the plots. It is estimated at about $4 to $5 on Claude Sonnet 5.5, and responses are cached on disk so a re-run replays identically. The estimate has not been checked against a real run. RQ3 also has a 30-sentence judge spot-check (`backend/research/spotcheck.py`), which needs human labels for the sentences; without them the judge's reliability is unmeasured. When the experiments are run, results will be appended to this report in new sections, and the hypotheses and amendments above will not be changed.
+
+## Defaults
+
+The app keeps `RETRIEVAL_MODE=hybrid`. RQ1 supports this: hybrid had the best or tied-best overall hit@8 under both chunkers (0.975 in both runs) and, under the packed chunker, tied BM25 for the best `exact_term` hit@8 (1.000). That support is limited, since H1 was rejected and the margins are one or two questions. `MIN_SIMILARITY=0.35` and `CHUNK_CHARS=2000` remain untested design defaults until RQ2 and RQ4 are run.
