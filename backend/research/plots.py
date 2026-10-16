@@ -78,8 +78,9 @@ def plot_rq1(summary: dict, out_dir: Path) -> Path:
         _grouped_bars(ax, tags, series, f"{title} (%)" if metric == "hit@8" else title)
         ax.set_xlabel("Question tag")
         ax.set_title(title)
-    axes[0].legend(title="Retrieval mode", loc="lower left")
-    fig.suptitle("RQ1: retrieval mode, by question tag")
+    handles, labels = axes[0].get_legend_handles_labels()
+    fig.legend(handles, labels, title="Retrieval mode", loc="lower center", ncol=len(modes), bbox_to_anchor=(0.5, -0.12))
+    fig.suptitle("RQ1: retrieval mode, by question tag (answerable questions)")
     return _save(fig, out_dir, "rq1_retrieval.png")
 
 
