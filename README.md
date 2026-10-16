@@ -58,9 +58,11 @@ Only RQ1 has been run so far. Retrieval over 40 answerable questions (hit@8 and 
 
 | Mode | hit@8 overall | hit@8 natural | hit@8 exact_term | MRR overall |
 |---|---|---|---|---|
-| vector | 0.975 | 1.000 | 0.950 | 0.826 |
-| bm25 | 0.900 | 0.800 | 1.000 | 0.676 |
-| hybrid | 0.975 | 1.000 | 0.950 | 0.796 |
+| vector | 0.950 | 0.950 | 0.950 | 0.686 |
+| bm25 | 0.875 | 0.750 | 1.000 | 0.702 |
+| hybrid | 0.975 | 0.950 | 1.000 | 0.716 |
+
+These numbers are from the re-run under the packing chunker (`20261016T200121Z.jsonl`; see Amendment 2 in [FINDINGS.md](FINDINGS.md)). The original run under the earlier chunker is kept in [`backend/research/results/rq1/20261016T193404Z.jsonl`](backend/research/results/rq1/20261016T193404Z.jsonl), with its summary in [`summary-original-chunker.json`](backend/research/results/rq1/summary-original-chunker.json).
 
 | Research question | Result |
 |---|---|

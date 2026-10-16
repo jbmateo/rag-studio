@@ -19,7 +19,7 @@ def test_chunks_respect_size_and_overlap():
 
 def test_never_crosses_segments():
     out = chunk_segments([Segment("A. " * 10, "p. 1", 1), Segment("B. " * 10, "p. 2", 2)], 2000)
-    assert [c.location for c in out] == ["p. 1", "p. 2"]
+    assert [c.location for c in out] == ["p. 1", "p. 2"]  # different pages: never packed
 
 
 def test_prefers_paragraph_boundary():
@@ -50,3 +50,52 @@ def test_text_without_whitespace_terminates():
     for a, b in zip(out, out[1:]):
         assert b.char_start > a.char_start
         assert seg.text[b.char_start:b.char_end] == b.text
+
+
+def test_packs_small_adjacent_segments():
+    segs = [Segment("Alpha para.", "¶ 1", None), Segment("Beta para.", "¶ 2", None), Segment("Gamma para.", "¶ 3", None)]
+    out = chunk_segments(segs, 2000)
+    assert len(out) == 1 and out[0].location == "¶ 1 – ¶ 3"
+    assert out[0].text == "Alpha para.\n\nBeta para.\n\nGamma para."
+
+
+def test_packing_respects_chunk_size():
+    segs = [Segment("x" * 600, f"¶ {i}", None) for i in range(1, 6)]
+    out = chunk_segments(segs, 1300)          # two 600-char segments + separator fit; three don't
+    assert [c.location for c in out] == ["¶ 1 – ¶ 2", "¶ 3 – ¶ 4", "¶ 5"]
+    assert all(len(c.text) <= 1300 for c in out)
+
+
+def test_never_packs_across_pages():
+    segs = [Segment("Page one text.", "p. 1", 1), Segment("Page two text.", "p. 2", 2)]
+    out = chunk_segments(segs, 2000)
+    assert [(c.location, c.page) for c in out] == [("p. 1", 1), ("p. 2", 2)]
+
+
+def test_oversized_segment_still_windowed_alone():
+    segs = [Segment("Small.", "A", None), Segment(" ".join(f"Sentence {i} here." for i in range(300)), "B", None), Segment("Tail.", "C", None)]
+    out = chunk_segments(segs, 1000)
+    assert out[0].location == "A" and out[-1].location == "C"
+    assert all(c.location == "B" for c in out[1:-1]) and len(out) > 3
+
+
+def test_packed_offsets_slice_back_to_block_text():
+    segs = [Segment("Alpha para.", "¶ 1", None), Segment("Beta para.", "¶ 2", None)]
+    (c,) = chunk_segments(segs, 2000)
+    block = "Alpha para.\n\nBeta para."
+    assert block[c.char_start:c.char_end] == c.text
+
+
+def test_sizes_now_differ_on_corpus():   # regression for the RQ4 defect
+    from pathlib import Path
+    from app.ingest.parsers import parse_file
+    corpus = Path(__file__).resolve().parents[1] / "research" / "corpus"
+    totals = {1000: 0, 2000: 0, 4000: 0}
+    for p in corpus.iterdir():
+        segs = parse_file(p, p.suffix[1:])
+        counts = {c: len(chunk_segments(segs, c)) for c in totals}
+        assert counts[1000] >= counts[2000] >= counts[4000], (p.name, counts)
+        if p.suffix != ".pdf":                      # PDF pages (<2000 chars) can't pack across pages
+            assert counts[2000] > counts[4000], (p.name, counts)
+        for c in totals: totals[c] += counts[c]
+    assert totals[1000] > totals[2000] > totals[4000]

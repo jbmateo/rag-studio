@@ -15,7 +15,7 @@ class ChunkDraft:
     text: str
     location: str
     page: int | None
-    char_start: int  # offsets into the segment text: seg.text[char_start:char_end] == text
+    char_start: int  # offsets into the packed block text: block_text[char_start:char_end] == text
     char_end: int
 
 
@@ -56,10 +56,44 @@ def _next_start(text: str, end: int, start: int, overlap: int) -> int:
     return max(ns, start + 1)  # always make forward progress
 
 
+_SEP = "\n\n"
+
+
+def _pack(segments: list[Segment], chunk_chars: int) -> list[Segment]:
+    """Join consecutive same-page segments into blocks of at most `chunk_chars`.
+
+    A segment longer than `chunk_chars` stays alone (and is windowed later).
+    """
+    blocks: list[Segment] = []
+    texts: list[str] = []
+    first = last = None  # locations of the open block
+    page: int | None = None
+    size = 0
+
+    def flush() -> None:
+        if texts:
+            loc = first if first == last else f"{first} \u2013 {last}"
+            blocks.append(Segment(_SEP.join(texts), loc, page))
+            texts.clear()
+
+    for seg in segments:
+        if not seg.text.strip():
+            continue
+        fits = texts and seg.page == page and size + len(_SEP) + len(seg.text) <= chunk_chars
+        if not fits:
+            flush()
+            first, page, size = seg.location, seg.page, -len(_SEP)
+        last = seg.location
+        texts.append(seg.text)
+        size += len(_SEP) + len(seg.text)
+    flush()
+    return blocks
+
+
 def chunk_segments(segments: list[Segment], chunk_chars: int) -> list[ChunkDraft]:
     overlap = int(chunk_chars * OVERLAP_RATIO)
     out: list[ChunkDraft] = []
-    for seg in segments:
+    for seg in _pack(segments, chunk_chars):
         text = seg.text
         start = 0
         while start < len(text):

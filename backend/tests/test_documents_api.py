@@ -86,7 +86,8 @@ def test_url_import_success_stores_html(authed, settings, monkeypatch):
 
 
 def test_chunks_pagination(authed):
-    body = b"# A\none\n# B\ntwo\n# C\nthree\n"
+    big = "word " * 300  # ~1500 chars per section, so adjacent sections don't pack into one chunk
+    body = f"# A\n{big}\n# B\n{big}\n# C\n{big}\n".encode()
     doc_id = authed.post("/api/documents", files=[_md("p.md", body)]).json()[0]["id"]
     allc = authed.get(f"/api/documents/{doc_id}/chunks").json()
     assert len(allc) >= 3
