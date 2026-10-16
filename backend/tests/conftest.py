@@ -192,3 +192,27 @@ class SpyLLM:
         self.calls += 1
         d = AnswerDraft(status="answered", sentences=[DraftSentence(text="Spy.", citations=["c1"])], missing="")
         return LLMOutcome(d, "end_turn", 1, 1)
+
+
+@pytest.fixture
+def authed_with_doc(authed):
+    r = authed.post(
+        "/api/documents",
+        files=[("files", ("notes.md", b"# Refunds\nRefunds take 14 days.\n", "text/markdown"))],
+    )
+    assert r.status_code in (200, 201, 202), r.text
+    return authed
+
+
+@pytest.fixture
+def failing_llm(client):
+    from app.answer.service import LLMUnavailableError
+
+    class _Failing:
+        def draft(self, question, passages, model):
+            raise LLMUnavailableError("boom")
+
+    original = client.app.state.llm
+    client.app.state.llm = _Failing()
+    yield
+    client.app.state.llm = original

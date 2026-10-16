@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 
+from app.ask.routes import router as ask_router
 from app.auth.routes import router as auth_router
 from app.documents.routes import router as documents_router
 from app.answer.llm import make_llm
@@ -24,9 +25,16 @@ def create_app(settings: Settings, embedder=None, llm=None) -> FastAPI:
 
     app.include_router(auth_router)
     app.include_router(documents_router)
+    app.include_router(ask_router)
 
     @app.get("/api/health")
     def health() -> dict:
         return {"ok": True}
 
     return app
+
+
+def get_app() -> FastAPI:
+    """Factory for uvicorn (`--factory`). Not a module-level `app`: importing this module
+    must not read .env or create storage/app.db."""
+    return create_app(Settings())
