@@ -163,4 +163,7 @@ def seeded_two_users(conn, two_users, storage, add_file_doc):
         ("refunds.md", "# Refunds\n\nRefunds take 14 days after approval.\n"),
         ("returns.md", "# Returns\n\nReturned items are refunded within 10 days of receipt.\n"),
     ])
+    _ingest(conn, b, storage, add_file_doc, [
+        ("b_refunds.md", "# Refunds\n\nB refunds arrive in 7 days.\n"),
+    ])
     return conn, a, b, a_doc_ids

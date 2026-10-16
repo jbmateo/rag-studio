@@ -71,13 +71,43 @@ def test_no_ready_docs(conn, user):
     assert r.gate_passed is False
 
 
-def test_scoped_to_user_and_doc_ids(seeded_two_users):
+MODES = ["vector", "bm25", "hybrid"]
+
+
+def _doc_ids(conn, user):
+    return {r["id"] for r in conn.execute("select id from documents where user_id=?", (user,))}
+
+
+@pytest.mark.parametrize("mode", MODES)
+def test_scoped_to_user_and_doc_ids(seeded_two_users, mode):
     conn, a, b, a_doc_ids = seeded_two_users
-    assert retrieve(conn, HashEmbedder(), PipelineConfig(), b, "refund days").chunks == []
-    r = retrieve(conn, HashEmbedder(), PipelineConfig(), a, "refund days", doc_ids=a_doc_ids[:1])
-    assert r.chunks and {c.chunk.document_id for c in r.chunks} <= {a_doc_ids[0]}
-    full = retrieve(conn, HashEmbedder(), PipelineConfig(), a, "refund days")
-    assert {c.chunk.document_id for c in full.chunks} == set(a_doc_ids)
+    cfg = PipelineConfig(retrieval_mode=mode)
+    b_docs = _doc_ids(conn, b)
+    assert b_docs and not (b_docs & set(a_doc_ids))
+    rb = retrieve(conn, HashEmbedder(), cfg, b, "refund days")
+    assert rb.chunks and {c.chunk.document_id for c in rb.chunks} <= b_docs
+    # Ranks must be dense: a leaked candidate from another user would occupy a rank
+    # even if a later step dropped it.
+    for attr in ("vector_rank", "bm25_rank"):
+        ranks = sorted(getattr(c, attr) for c in rb.chunks if getattr(c, attr) is not None)
+        assert ranks == list(range(1, len(ranks) + 1))
+    # a's doc ids supplied by b must not leak a's chunks
+    leak = retrieve(conn, HashEmbedder(), cfg, b, "refund days", doc_ids=a_doc_ids)
+    assert leak.chunks == []
+    ra = retrieve(conn, HashEmbedder(), cfg, a, "refund days", doc_ids=a_doc_ids[:1])
+    assert ra.chunks and {c.chunk.document_id for c in ra.chunks} <= {a_doc_ids[0]}
+    full = retrieve(conn, HashEmbedder(), cfg, a, "refund days")
+    assert {c.chunk.document_id for c in full.chunks} <= set(a_doc_ids)
+
+
+@pytest.mark.parametrize("mode", MODES)
+def test_non_ready_docs_excluded(seeded, mode):
+    conn, user = seeded
+    conn.execute("update documents set status='processing' where user_id=? and name='refunds.md'", (user,))
+    conn.commit()
+    r = retrieve(conn, HashEmbedder(), PipelineConfig(retrieval_mode=mode), user, "refund days")
+    assert all(c.chunk.document_name != "refunds.md" for c in r.chunks)
+    assert not any("Refunds take 14 days" in c.chunk.text for c in r.chunks)
 
 
 def test_top_k_limits_results(seeded):
