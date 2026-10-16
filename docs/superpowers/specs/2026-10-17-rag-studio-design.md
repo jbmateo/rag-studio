@@ -11,9 +11,9 @@ The deliverable has two halves:
 1. **Research testbed** — a working multi-user web app (upload documents, ask questions, clickable citations, explicit refusals) whose pipeline components are configurable so they can be studied.
 2. **Research output** — controlled experiments over that pipeline, reported in `FINDINGS.md` with method, results, charts, and limitations (including negative results).
 
-Audience: interviewers / reviewers evaluating research and engineering ability. Success means:
+Success means:
 - Each research question (§2) has a reproducible experiment and a written, evidence-backed answer.
-- A reviewer can clone, run one command, use the app end-to-end, and re-run the experiments with one command.
+- Anyone can clone, run one command, use the app end-to-end, and re-run the experiments with one command.
 - The shipped app uses the configuration the experiments found best, and `FINDINGS.md` says why.
 
 ## 2. Research questions
