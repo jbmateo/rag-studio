@@ -1,4 +1,5 @@
 import uuid
+from pathlib import Path
 
 import pytest
 
@@ -49,8 +50,10 @@ def client(settings):
 
     from app.main import create_app
 
-    # Embedder/LLM fakes arrive in later tasks; pass None until then.
-    with TestClient(create_app(settings, None, None)) as c:
+    from app.embeddings import HashEmbedder
+
+    # The LLM fake arrives in a later task; pass None until then.
+    with TestClient(create_app(settings, HashEmbedder(), None)) as c:
         yield c
 
 
@@ -62,3 +65,48 @@ def signup(client):
         return r
 
     return _signup
+
+
+def _insert_user(conn, email):
+    user_id = uuid.uuid4().hex
+    conn.execute(
+        "insert into users(id,email,password_hash) values(?,?,?)", (user_id, email, "x")
+    )
+    conn.commit()
+    return user_id
+
+
+@pytest.fixture
+def two_users(conn):
+    return _insert_user(conn, "a@example.com"), _insert_user(conn, "b@example.com")
+
+
+@pytest.fixture
+def user(conn):
+    return _insert_user(conn, "u@example.com")
+
+
+@pytest.fixture
+def storage(tmp_path):
+    path = tmp_path / "files"
+    path.mkdir()
+    return path
+
+
+@pytest.fixture
+def add_file_doc():
+    """Write `content` to storage/{user}/{uuid}.{ext} and register it as a document."""
+    from app.store import create_document
+
+    def _add(conn, user_id, storage, name, content):
+        ext = name.rsplit(".", 1)[-1]
+        path = Path(storage) / user_id / f"{uuid.uuid4().hex}.{ext}"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        data = content if isinstance(content, bytes) else content.encode()
+        path.write_bytes(data)
+        return create_document(
+            conn, user_id, name=name, source_type=ext, source_url=None,
+            file_path=str(path), size_bytes=len(data),
+        )
+
+    return _add

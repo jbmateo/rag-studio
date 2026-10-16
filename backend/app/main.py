@@ -3,12 +3,13 @@ from fastapi import FastAPI
 from app.auth.routes import router as auth_router
 from app.config import Settings
 from app.db import connect, init_db
+from app.embeddings import make_embedder
 
 
 def create_app(settings: Settings, embedder=None, llm=None) -> FastAPI:
     app = FastAPI(title="RAG Studio")
     app.state.settings = settings
-    app.state.embedder = embedder
+    app.state.embedder = embedder if embedder is not None else make_embedder(settings.embedder)
     app.state.llm = llm
     app.state.login_attempts = {}
 

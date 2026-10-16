@@ -25,3 +25,8 @@ def test_fts_tracks_chunk_insert_and_delete(conn, make_user_doc):
 def test_settings_pipeline_defaults():
     p = Settings(_env_file=None).pipeline()
     assert p == PipelineConfig()
+
+
+def test_connect_sets_wal_and_busy_timeout(conn):
+    assert conn.execute("PRAGMA journal_mode").fetchone()[0] == "wal"
+    assert conn.execute("PRAGMA busy_timeout").fetchone()[0] == 5000
