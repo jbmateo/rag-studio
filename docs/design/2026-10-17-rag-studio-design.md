@@ -42,7 +42,7 @@ rag-studio/
 │   ├── research/    corpus/, questions.jsonl, experiments/*.yaml, run_experiment.py,
 │   │                results/ (raw JSONL per run, committed), plots/
 │   └── storage/     uploaded originals (gitignored) + app.db (gitignored)
-├── docs/superpowers/specs/
+├── docs/            design/ (specs), plans/ (implementation plans)
 ├── FINDINGS.md      research report: questions, hypotheses, method, results, limitations
 ├── Makefile         `make setup`, `make dev` (runs both), `make test`, `make experiments`
 └── README.md        project overview, links to FINDINGS.md, how to run app + experiments
