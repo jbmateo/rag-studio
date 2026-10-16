@@ -39,7 +39,7 @@ MEDIA_TYPES = {
 
 
 class UrlImport(BaseModel):
-    url: str = Field(min_length=1, max_length=1999)
+    url: str = Field(min_length=1, max_length=2000)
 
 
 def _display_name(raw: str) -> str:
@@ -54,40 +54,61 @@ def _run_ingest(settings: Settings, embedder: Embedder, doc_id: str) -> None:
         conn.close()
 
 
-async def _read_limited(upload: UploadFile, name: str) -> bytes:
-    data = bytearray()
-    while chunk := await upload.read(_READ_CHUNK):
-        data += chunk
-        if len(data) > MAX_BYTES:
-            raise HTTPException(400, f"{name}: file too large (max 20 MB)")
-    return bytes(data)
+MAX_REQUEST_BYTES = 100 * 1024 * 1024
+MAX_FILES = 20
 
 
-async def _import_files(request: Request, form, user: User, conn, tasks: BackgroundTasks) -> list[Document]:
+async def _save_limited(upload: UploadFile, name: str, path: Path) -> int:
+    """Stream the upload to `path`, aborting past the size limit. Returns bytes written."""
+    size = 0
+    with path.open("wb") as out:
+        while chunk := await upload.read(_READ_CHUNK):
+            size += len(chunk)
+            if size > MAX_BYTES:
+                raise HTTPException(400, f"{name}: file too large (max 20 MB)")
+            out.write(chunk)
+    return size
+
+
+async def _import_files(request: Request, user: User, conn, tasks: BackgroundTasks) -> list[Document]:
     settings: Settings = request.app.state.settings
-    uploads = [f for f in form.getlist("files") if isinstance(f, UploadFile)]
-    if not uploads:
-        raise HTTPException(422, "No files provided")
-    accepted: list[tuple[str, str, bytes]] = []
-    for up in uploads:  # validate everything before saving anything
-        name = _display_name(up.filename or "")
-        ext = name.rsplit(".", 1)[-1].lower() if "." in name else ""
-        if ext not in ALLOWED:
-            raise HTTPException(400, f"{name or 'file'}: unsupported file type")
-        accepted.append((name, ext, await _read_limited(up, name)))
-    docs = []
+    declared = request.headers.get("content-length", "")
+    if declared.isdigit() and int(declared) > MAX_REQUEST_BYTES:
+        raise HTTPException(413, "Upload too large (max 100 MB per request)")
     user_dir = settings.storage_dir / user.id
-    user_dir.mkdir(parents=True, exist_ok=True)
-    for name, ext, data in accepted:
-        doc_id = uuid.uuid4().hex
-        path = user_dir / f"{doc_id}.{ext}"
-        path.write_bytes(data)
-        doc = create_document(
-            conn, user.id, name=name, source_type=ext, source_url=None,
-            file_path=str(path), size_bytes=len(data), doc_id=doc_id,
-        )
+    written: list[tuple[str, str, str, Path, int]] = []
+    docs: list[Document] = []
+    try:
+        async with request.form() as form:
+            uploads = [f for f in form.getlist("files") if isinstance(f, UploadFile)]
+            if not uploads:
+                raise HTTPException(422, "No files provided")
+            if len(uploads) > MAX_FILES:
+                raise HTTPException(400, "Too many files (max 20 per request)")
+            user_dir.mkdir(parents=True, exist_ok=True)
+            for up in uploads:  # validate + stream to disk; nothing is registered until all pass
+                name = _display_name(up.filename or "")
+                ext = name.rsplit(".", 1)[-1].lower() if "." in name else ""
+                if ext not in ALLOWED:
+                    raise HTTPException(400, f"{name or 'file'}: unsupported file type")
+                doc_id = uuid.uuid4().hex
+                path = user_dir / f"{doc_id}.{ext}"
+                written.append((doc_id, name, ext, path, 0))
+                size = await _save_limited(up, name, path)
+                written[-1] = (doc_id, name, ext, path, size)
+        for doc_id, name, ext, path, size in written:
+            docs.append(create_document(
+                conn, user.id, name=name, source_type=ext, source_url=None,
+                file_path=str(path), size_bytes=size, doc_id=doc_id,
+            ))
+    except BaseException:
+        for doc in docs:
+            delete_document(conn, user.id, doc.id)
+        for *_, path, _size in written:
+            path.unlink(missing_ok=True)
+        raise
+    for doc in docs:
         tasks.add_task(_run_ingest, settings, request.app.state.embedder, doc.id)
-        docs.append(doc)
     return docs
 
 
@@ -101,13 +122,13 @@ async def add_documents(
     settings: Settings = request.app.state.settings
     ctype = request.headers.get("content-type", "").lower()
     if ctype.startswith("multipart/form-data"):
-        return await _import_files(request, await request.form(), user, conn, tasks)
+        return await _import_files(request, user, conn, tasks)
     if not ctype.startswith("application/json"):
         raise HTTPException(415, "Send multipart files or JSON {url}")
     try:
         body = UrlImport.model_validate(await request.json())
     except Exception as e:
-        raise HTTPException(422, "url must be a non-empty string under 2,000 characters") from e
+        raise HTTPException(422, "url must be a non-empty string of 2,000 characters or fewer") from e
     doc_id = uuid.uuid4().hex
     path = settings.storage_dir / user.id / f"{doc_id}.html"
     doc = create_document(
@@ -138,7 +159,7 @@ def get_file(doc_id: str, user: User = Depends(current_user), conn: sqlite3.Conn
     if found is None or not found[1].is_file():
         raise HTTPException(404, "Not found")
     doc, path = found
-    headers = {"Content-Disposition": f"inline; filename*=UTF-8''{quote(doc.name, safe='')}"}
+    headers = {"X-Content-Type-Options": "nosniff", "Content-Disposition": f"inline; filename*=UTF-8''{quote(doc.name, safe='')}"}
     if doc.source_type in ("html", "url"):
         headers["Content-Security-Policy"] = "sandbox"  # uploaded HTML must not run scripts in our origin
     return FileResponse(path, media_type=MEDIA_TYPES[doc.source_type], headers=headers)

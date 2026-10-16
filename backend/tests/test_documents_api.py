@@ -69,8 +69,9 @@ def test_url_import_unsafe_scheme_marked_failed(authed, settings):
 
 
 def test_url_import_validation(authed):
-    for body in ({"url": ""}, {"url": "h" * 2000}, {}):
+    for body in ({"url": ""}, {"url": "h" * 2001}, {}):
         assert authed.post("/api/documents", json=body).status_code == 422
+    assert authed.post("/api/documents", json={"url": "h" * 2000}).status_code == 201
 
 
 def test_url_import_success_stores_html(authed, settings, monkeypatch):
@@ -84,6 +85,38 @@ def test_url_import_success_stores_html(authed, settings, monkeypatch):
     assert f.headers["content-security-policy"] == "sandbox"
 
 
-def test_chunks_pagination_and_missing(authed):
+def test_chunks_pagination(authed):
+    body = b"# A\none\n# B\ntwo\n# C\nthree\n"
+    doc_id = authed.post("/api/documents", files=[_md("p.md", body)]).json()[0]["id"]
+    allc = authed.get(f"/api/documents/{doc_id}/chunks").json()
+    assert len(allc) >= 3
+    page = authed.get(f"/api/documents/{doc_id}/chunks?offset=1&limit=1").json()
+    assert page == [allc[1]]
+
+
+def test_missing_doc_404(authed):
     assert authed.get("/api/documents/nope/chunks").status_code == 404
     assert authed.get("/api/documents/nope/file").status_code == 404
+
+
+def test_too_many_files(authed, settings):
+    r = authed.post("/api/documents", files=[_md(f"{i}.md") for i in range(21)])
+    assert r.status_code == 400 and r.json()["detail"] == "Too many files (max 20 per request)"
+    assert authed.get("/api/documents").json() == []
+
+
+def test_declared_content_length_413(authed):
+    r = authed.post("/api/documents", files=[_md("a.md")], headers={"content-length": str(101 * 1024 * 1024)})
+    assert r.status_code == 413 and r.json()["detail"] == "Upload too large (max 100 MB per request)"
+
+
+def test_late_failure_cleans_written_files(authed, settings):
+    r = authed.post("/api/documents", files=[_md("ok.md"), ("files", ("big.txt", b"a" * (20 * 1024 * 1024 + 1), "text/plain"))])
+    assert r.status_code == 400
+    assert not [p for p in settings.storage_dir.rglob("*") if p.is_file()]
+    assert authed.get("/api/documents").json() == []
+
+
+def test_file_response_nosniff(authed):
+    doc_id = authed.post("/api/documents", files=[_md("a.md")]).json()[0]["id"]
+    assert authed.get(f"/api/documents/{doc_id}/file").headers["x-content-type-options"] == "nosniff"
