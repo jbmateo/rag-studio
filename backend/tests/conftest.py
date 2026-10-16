@@ -131,3 +131,36 @@ def as_user(client):
 def authed(client, as_user):
     as_user("authed@example.com")
     return client
+
+
+def _ingest(conn, user_id, storage, add_file_doc, docs):
+    from app.config import PipelineConfig
+    from app.embeddings import HashEmbedder
+    from app.ingest.pipeline import ingest_document
+
+    ids = []
+    for name, content in docs:
+        doc = add_file_doc(conn, user_id, storage, name, content)
+        ingest_document(conn, HashEmbedder(), PipelineConfig(), doc.id)
+        ids.append(doc.id)
+    return ids
+
+
+@pytest.fixture
+def seeded(conn, user, storage, add_file_doc):
+    _ingest(conn, user, storage, add_file_doc, [
+        ("refunds.md", "# Refund policy\n\nRefunds take 14 days to reach your original payment method.\n"),
+        ("errors.md", "# Error codes\n\nError code E-4471 means the token expired.\n"),
+        ("onboarding.md", "# Onboarding\n\nWelcome aboard. Your manager will schedule a first-week orientation.\n"),
+    ])
+    return conn, user
+
+
+@pytest.fixture
+def seeded_two_users(conn, two_users, storage, add_file_doc):
+    a, b = two_users
+    a_doc_ids = _ingest(conn, a, storage, add_file_doc, [
+        ("refunds.md", "# Refunds\n\nRefunds take 14 days after approval.\n"),
+        ("returns.md", "# Returns\n\nReturned items are refunded within 10 days of receipt.\n"),
+    ])
+    return conn, a, b, a_doc_ids
