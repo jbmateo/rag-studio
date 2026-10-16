@@ -8,3 +8,8 @@ __pycache__/
 backend/storage/
 *.db
 .superpowers/
+backend/research/cache/
+backend/storage/
+frontend/test-results/
+frontend/playwright-report/
+*.egg-info/
