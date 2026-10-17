@@ -91,3 +91,33 @@ def test_cached_llm_has_reports_entries(tmp_path):
     assert not cached.has("q", P, "m", system="one")
     cached.draft("q", P, "m", system="one")
     assert cached.has("q", P, "m", system="one") and not cached.has("q", P, "m", system="two")
+
+
+def test_cache_key_follows_user_message_template(tmp_path, monkeypatch):
+    """A change to how passages are rendered must not serve drafts cached under the old rendering."""
+    cached = CachedLLM(Counting(), tmp_path)
+    cached.draft("q", P, "m")
+    assert cached.has("q", P, "m")
+    monkeypatch.setattr(llm_mod, "build_user_message", lambda q, ps: "NEW FORMAT " + q)
+    assert not cached.has("q", P, "m")
+
+
+def test_cache_key_unchanged_for_current_template(tmp_path):
+    """Existing cache entries stay valid: the current template keeps the legacy key."""
+    import hashlib
+    import json
+
+    from app.answer.llm import ANSWER_EFFORT
+    legacy = hashlib.sha256(json.dumps(
+        {"model": "m", "system": SYSTEM_PROMPT, "effort": ANSWER_EFFORT, "schema": ANSWER_SCHEMA,
+         "question": "q", "passages": [p.model_dump() for p in P]}, sort_keys=True).encode()).hexdigest()
+    CachedLLM(Counting(), tmp_path).draft("q", P, "m")
+    assert (tmp_path / f"{legacy}.json").exists()
+
+
+def test_has_ignores_corrupt_entry(tmp_path):
+    cached = CachedLLM(Counting(), tmp_path)
+    cached.draft("q", P, "m")
+    for f in tmp_path.iterdir():
+        f.write_text("{broken")
+    assert not cached.has("q", P, "m")
