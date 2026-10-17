@@ -84,3 +84,10 @@ def test_trace_records_stop_reasons(seeded):
 
     _, trace = answer_question_detailed(conn, HashEmbedder(), NoneThenValid(), PipelineConfig(), user, "refund days", None)
     assert trace.stop_reasons == ["end_turn", "end_turn"]
+
+
+def test_cached_llm_has_reports_entries(tmp_path):
+    cached = CachedLLM(Counting(), tmp_path)
+    assert not cached.has("q", P, "m", system="one")
+    cached.draft("q", P, "m", system="one")
+    assert cached.has("q", P, "m", system="one") and not cached.has("q", P, "m", system="two")

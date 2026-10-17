@@ -66,7 +66,7 @@ class CachedLLM:
         self.cache_dir = Path(cache_dir)
         self.cache_dir.mkdir(parents=True, exist_ok=True)
 
-    def draft(self, question: str, passages: list[Passage], model: str, system: str = SYSTEM_PROMPT) -> LLMOutcome:
+    def _path(self, question: str, passages: list[Passage], model: str, system: str) -> Path:
         key = hashlib.sha256(
             json.dumps(
                 {"model": model, "system": system, "effort": ANSWER_EFFORT, "schema": ANSWER_SCHEMA,
@@ -74,7 +74,14 @@ class CachedLLM:
                 sort_keys=True,
             ).encode()
         ).hexdigest()
-        path = self.cache_dir / f"{key}.json"
+        return self.cache_dir / f"{key}.json"
+
+    def has(self, question: str, passages: list[Passage], model: str, system: str = SYSTEM_PROMPT) -> bool:
+        """Whether a draft for exactly this request is cached (lets callers estimate cost before calling)."""
+        return self._path(question, passages, model, system).exists()
+
+    def draft(self, question: str, passages: list[Passage], model: str, system: str = SYSTEM_PROMPT) -> LLMOutcome:
+        path = self._path(question, passages, model, system)
         if path.exists():
             try:
                 d = json.loads(path.read_text())
