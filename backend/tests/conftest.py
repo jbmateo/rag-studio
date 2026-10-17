@@ -174,7 +174,7 @@ class ScriptedLLM:
     def __init__(self, draft, stop_reason="end_turn"):
         self._draft, self._stop, self.calls = draft, stop_reason, 0
 
-    def draft(self, question, passages, model):
+    def draft(self, question, passages, model, system=None):
         from app.answer.llm import LLMOutcome
 
         self.calls += 1
@@ -185,7 +185,7 @@ class SpyLLM:
     def __init__(self):
         self.calls = 0
 
-    def draft(self, question, passages, model):
+    def draft(self, question, passages, model, system=None):
         from app.answer.llm import LLMOutcome
         from app.answer.schema import AnswerDraft, DraftSentence
 
@@ -209,7 +209,7 @@ def failing_llm(client):
     from app.answer.service import LLMUnavailableError
 
     class _Failing:
-        def draft(self, question, passages, model):
+        def draft(self, question, passages, model, system=None):
             raise LLMUnavailableError("boom")
 
     original = client.app.state.llm

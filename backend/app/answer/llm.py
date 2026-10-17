@@ -8,14 +8,11 @@ import anthropic
 from anthropic import transform_schema
 from pydantic import ValidationError
 
+from app.answer.prompts import PROMPTS
 from app.answer.schema import AnswerDraft, DraftSentence, Passage
 
-SYSTEM_PROMPT = """You answer questions using only the numbered passages provided. Each passage is labelled like [c1].
-- Every sentence you write must cite at least one passage label that directly supports it.
-- Use only information stated in the passages. Do not use outside knowledge, and do not infer beyond what the passages say.
-- If the passages fully answer the question, use status "answered".
-- If they answer only part of it, answer that part, use status "partial", and describe what is missing in "missing".
-- If they do not answer it, use status "insufficient_evidence", return no sentences, and describe what is missing in "missing"."""
+SYSTEM_PROMPT = PROMPTS["default"]
+ANSWER_EFFORT = "medium"
 
 
 ANSWER_SCHEMA = transform_schema(AnswerDraft)
@@ -31,7 +28,7 @@ class LLMOutcome:
 
 
 class LLM(Protocol):
-    def draft(self, question: str, passages: list[Passage], model: str) -> LLMOutcome: ...
+    def draft(self, question: str, passages: list[Passage], model: str, system: str = SYSTEM_PROMPT) -> LLMOutcome: ...
 
 
 def build_user_message(question: str, passages: list[Passage]) -> str:
@@ -43,14 +40,14 @@ class ClaudeLLM:
     def __init__(self, api_key: str, client=None):
         self.client = client or anthropic.Anthropic(api_key=api_key, timeout=30, max_retries=1)
 
-    def draft(self, question: str, passages: list[Passage], model: str) -> LLMOutcome:
+    def draft(self, question: str, passages: list[Passage], model: str, system: str = SYSTEM_PROMPT) -> LLMOutcome:
         # anthropic.APIError (status, connection, timeout) propagates to the caller.
         resp = self.client.messages.create(
             model=model,
             max_tokens=4000,
-            system=SYSTEM_PROMPT,
+            system=system,
             messages=[{"role": "user", "content": build_user_message(question, passages)}],
-            output_config={"effort": "medium", "format": {"type": "json_schema", "schema": ANSWER_SCHEMA}},
+            output_config={"effort": ANSWER_EFFORT, "format": {"type": "json_schema", "schema": ANSWER_SCHEMA}},
         )
         stop = resp.stop_reason or ""
         draft = None
@@ -69,11 +66,11 @@ class CachedLLM:
         self.cache_dir = Path(cache_dir)
         self.cache_dir.mkdir(parents=True, exist_ok=True)
 
-    def draft(self, question: str, passages: list[Passage], model: str) -> LLMOutcome:
+    def draft(self, question: str, passages: list[Passage], model: str, system: str = SYSTEM_PROMPT) -> LLMOutcome:
         key = hashlib.sha256(
             json.dumps(
-                {"model": model, "system": SYSTEM_PROMPT, "question": question,
-                 "passages": [p.model_dump() for p in passages]},
+                {"model": model, "system": system, "effort": ANSWER_EFFORT, "schema": ANSWER_SCHEMA,
+                 "question": question, "passages": [p.model_dump() for p in passages]},
                 sort_keys=True,
             ).encode()
         ).hexdigest()
@@ -90,7 +87,7 @@ class CachedLLM:
                 )
             except (OSError, ValueError, KeyError, ValidationError):
                 pass  # corrupt entry: fall through and regenerate
-        out = self.inner.draft(question, passages, model)
+        out = self.inner.draft(question, passages, model, system=system)
         if out.draft is not None:
             payload = asdict(out)
             payload.pop("cached")
@@ -100,7 +97,7 @@ class CachedLLM:
 
 
 class FakeLLM:
-    def draft(self, question: str, passages: list[Passage], model: str) -> LLMOutcome:
+    def draft(self, question: str, passages: list[Passage], model: str, system: str = SYSTEM_PROMPT) -> LLMOutcome:
         if "unanswerable" in question.lower() or not passages:
             draft = AnswerDraft(
                 status="insufficient_evidence", sentences=[],
