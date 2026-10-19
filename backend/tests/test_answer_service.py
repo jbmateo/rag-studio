@@ -65,7 +65,7 @@ def test_api_error_becomes_llm_unavailable(seeded):
     conn, user = seeded
 
     class Boom:
-        def draft(self, *a):
+        def draft(self, *a, **kw):
             raise anthropic.APIConnectionError(request=httpx.Request("POST", "http://x"))
 
     with pytest.raises(LLMUnavailableError):
@@ -167,7 +167,7 @@ def test_retry_that_succeeds(seeded):
     class Flaky:
         calls = 0
 
-        def draft(self, q, passages, model):
+        def draft(self, q, passages, model, system=None):
             from app.answer.llm import LLMOutcome
             self.calls += 1
             if self.calls == 1:

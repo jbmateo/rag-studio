@@ -1,9 +1,10 @@
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import anthropic
 
 from app.answer.llm import LLM
+from app.answer.prompts import PROMPTS
 from app.answer.schema import (
     AnswerDraft, AskChunk, AskCitation, AskResponse, AskSentence, DraftSentence, Passage, Timings,
 )
@@ -31,10 +32,17 @@ class AnswerTrace:
     input_tokens: int
     output_tokens: int
     retrieval: RetrievalResult
+    stop_reasons: list[str] = field(default_factory=list)
 
 
 def _ms(start: float) -> int:
     return round((time.perf_counter() - start) * 1000)
+
+
+def _system_prompt(variant: str) -> str:
+    if variant not in PROMPTS:
+        raise ValueError(f"Unknown prompt_variant {variant!r}; known: {sorted(PROMPTS)}")
+    return PROMPTS[variant]
 
 
 def answer_question_detailed(
@@ -70,11 +78,13 @@ def answer_question_detailed(
         Passage(label=lb, document_name=rc.chunk.document_name, location=rc.chunk.location, text=rc.chunk.text)
         for lb, rc in zip(labels, result.chunks)
     ]
+    system = _system_prompt(cfg.prompt_variant)
     t1 = time.perf_counter()
     outcome = None
     try:
         for _ in range(2):
-            outcome = llm.draft(question, passages, cfg.model)
+            outcome = llm.draft(question, passages, cfg.model, system=system)
+            trace.stop_reasons.append(outcome.stop_reason)
             trace.input_tokens += outcome.input_tokens
             trace.output_tokens += outcome.output_tokens
             if outcome.draft is not None or outcome.stop_reason == "refusal":

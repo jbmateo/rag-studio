@@ -63,8 +63,8 @@ class _Spy:
     def __init__(self, inner):
         self.inner, self.cached = inner, []
 
-    def draft(self, question, passages, model):
-        out = self.inner.draft(question, passages, model)
+    def draft(self, question, passages, model, **kw):
+        out = self.inner.draft(question, passages, model, **kw)
         self.cached.append(bool(out.cached))
         return out
 
