@@ -76,7 +76,7 @@ def test_cached_flag_from_llm_outcome(corpus):
     q = next(x for x in load_questions() if x["id"] == "q012")
 
     class Cached(FakeLLM):
-        def draft(self, *a):
+        def draft(self, *a, **kw):
             out = super().draft(*a)
             out.cached = True
             return out

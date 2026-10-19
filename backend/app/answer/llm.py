@@ -8,14 +8,12 @@ import anthropic
 from anthropic import transform_schema
 from pydantic import ValidationError
 
+from app.answer.prompts import PROMPTS
 from app.answer.schema import AnswerDraft, DraftSentence, Passage
 
-SYSTEM_PROMPT = """You answer questions using only the numbered passages provided. Each passage is labelled like [c1].
-- Every sentence you write must cite at least one passage label that directly supports it.
-- Use only information stated in the passages. Do not use outside knowledge, and do not infer beyond what the passages say.
-- If the passages fully answer the question, use status "answered".
-- If they answer only part of it, answer that part, use status "partial", and describe what is missing in "missing".
-- If they do not answer it, use status "insufficient_evidence", return no sentences, and describe what is missing in "missing"."""
+SYSTEM_PROMPT = PROMPTS["default"]
+ANSWER_EFFORT = "medium"
+ANSWER_MAX_TOKENS = 4000
 
 
 ANSWER_SCHEMA = transform_schema(AnswerDraft)
@@ -31,7 +29,7 @@ class LLMOutcome:
 
 
 class LLM(Protocol):
-    def draft(self, question: str, passages: list[Passage], model: str) -> LLMOutcome: ...
+    def draft(self, question: str, passages: list[Passage], model: str, system: str = SYSTEM_PROMPT) -> LLMOutcome: ...
 
 
 def build_user_message(question: str, passages: list[Passage]) -> str:
@@ -43,14 +41,14 @@ class ClaudeLLM:
     def __init__(self, api_key: str, client=None):
         self.client = client or anthropic.Anthropic(api_key=api_key, timeout=30, max_retries=1)
 
-    def draft(self, question: str, passages: list[Passage], model: str) -> LLMOutcome:
+    def draft(self, question: str, passages: list[Passage], model: str, system: str = SYSTEM_PROMPT) -> LLMOutcome:
         # anthropic.APIError (status, connection, timeout) propagates to the caller.
         resp = self.client.messages.create(
             model=model,
-            max_tokens=4000,
-            system=SYSTEM_PROMPT,
+            max_tokens=ANSWER_MAX_TOKENS,
+            system=system,
             messages=[{"role": "user", "content": build_user_message(question, passages)}],
-            output_config={"effort": "medium", "format": {"type": "json_schema", "schema": ANSWER_SCHEMA}},
+            output_config={"effort": ANSWER_EFFORT, "format": {"type": "json_schema", "schema": ANSWER_SCHEMA}},
         )
         stop = resp.stop_reason or ""
         draft = None
@@ -63,21 +61,50 @@ class ClaudeLLM:
         return LLMOutcome(draft, stop, resp.usage.input_tokens, resp.usage.output_tokens)
 
 
+# Fingerprint of the user-message template when cache keys were introduced. Keys for that template
+# stay as they were (existing caches remain valid); any other rendering or max_tokens gets its own key.
+_LEGACY_TEMPLATE_FP = "a7a55061173317373b40023d3fb32deea0c2d8b232755cd1bccc38fffa01d287"
+_LEGACY_MAX_TOKENS = 4000
+_PROBE = [Passage(label="c1", document_name="d", location="l", text="t")]
+
+
+def _request_shape() -> dict:
+    extra = {}
+    fp = hashlib.sha256(build_user_message("q", _PROBE).encode()).hexdigest()
+    if fp != _LEGACY_TEMPLATE_FP:
+        extra["user_template"] = fp
+    if ANSWER_MAX_TOKENS != _LEGACY_MAX_TOKENS:
+        extra["max_tokens"] = ANSWER_MAX_TOKENS
+    return extra
+
+
 class CachedLLM:
     def __init__(self, inner: LLM, cache_dir: Path):
         self.inner = inner
         self.cache_dir = Path(cache_dir)
         self.cache_dir.mkdir(parents=True, exist_ok=True)
 
-    def draft(self, question: str, passages: list[Passage], model: str) -> LLMOutcome:
+    def _path(self, question: str, passages: list[Passage], model: str, system: str) -> Path:
         key = hashlib.sha256(
             json.dumps(
-                {"model": model, "system": SYSTEM_PROMPT, "question": question,
-                 "passages": [p.model_dump() for p in passages]},
+                {"model": model, "system": system, "effort": ANSWER_EFFORT, "schema": ANSWER_SCHEMA,
+                 "question": question, "passages": [p.model_dump() for p in passages], **_request_shape()},
                 sort_keys=True,
             ).encode()
         ).hexdigest()
-        path = self.cache_dir / f"{key}.json"
+        return self.cache_dir / f"{key}.json"
+
+    def has(self, question: str, passages: list[Passage], model: str, system: str = SYSTEM_PROMPT) -> bool:
+        """Whether a draft for exactly this request is cached (lets callers estimate cost before calling)."""
+        try:
+            d = json.loads(self._path(question, passages, model, system).read_text())
+            AnswerDraft.model_validate(d["draft"])
+            return True
+        except (OSError, ValueError, KeyError, ValidationError):
+            return False
+
+    def draft(self, question: str, passages: list[Passage], model: str, system: str = SYSTEM_PROMPT) -> LLMOutcome:
+        path = self._path(question, passages, model, system)
         if path.exists():
             try:
                 d = json.loads(path.read_text())
@@ -90,7 +117,7 @@ class CachedLLM:
                 )
             except (OSError, ValueError, KeyError, ValidationError):
                 pass  # corrupt entry: fall through and regenerate
-        out = self.inner.draft(question, passages, model)
+        out = self.inner.draft(question, passages, model, system=system)
         if out.draft is not None:
             payload = asdict(out)
             payload.pop("cached")
@@ -100,7 +127,7 @@ class CachedLLM:
 
 
 class FakeLLM:
-    def draft(self, question: str, passages: list[Passage], model: str) -> LLMOutcome:
+    def draft(self, question: str, passages: list[Passage], model: str, system: str = SYSTEM_PROMPT) -> LLMOutcome:
         if "unanswerable" in question.lower() or not passages:
             draft = AnswerDraft(
                 status="insufficient_evidence", sentences=[],

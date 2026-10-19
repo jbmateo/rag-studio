@@ -15,6 +15,7 @@ class PipelineConfig:
     chunk_chars: int = 2000
     top_k: int = 8
     model: str = "claude-sonnet-5-5"
+    prompt_variant: str = "default"
 
 
 class Settings(BaseSettings):
